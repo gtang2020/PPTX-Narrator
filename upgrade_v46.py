@@ -1,26 +1,26 @@
 """
-PPTX Narrator V4.5 -> V4.6 Upgrade
+PPTX Narrator V4.6 Upgrade
+==========================
 
-Portable checkpoint recovery.
+Upgrade from V4.5 using original backups.
 
-This upgrade:
-1. Preserves the V4.5 backup files.
-2. Generates a V4.6 backend.
-3. Generates a V4.6 frontend.
-4. Adds portable PPTX checkpoint metadata.
-5. Supports resuming from uploaded checkpoints.
-6. Checks Python syntax before replacing live files.
-
-Run:
-    python upgrade_v46.py
-
-Required backups:
+Required:
     app_v4_5.py
     index_v4_5.html
 
 Generated:
     app.py
     index_v4.html
+
+Features:
+    Portable PPTX checkpoint metadata
+    Recovery from uploaded PPTX
+    Resume without repeating completed slides
+    Checkpoint validation
+    V4.6 frontend
+
+Run:
+    python upgrade_v46.py
 """
 
 from pathlib import Path
@@ -30,7 +30,7 @@ import tempfile
 
 
 # ============================================================
-# FILE CONFIGURATION
+# FILES
 # ============================================================
 
 ROOT = Path(__file__).resolve().parent
@@ -43,64 +43,59 @@ FRONTEND_OUTPUT = ROOT / "index_v4.html"
 
 
 # ============================================================
-# READ ORIGINAL BACKUPS
+# READ BACKUPS
 # ============================================================
 
-if not BACKEND_BACKUP.is_file():
-    raise SystemExit(
-        "ERROR: app_v4_5.py backup is missing."
-    )
+for path in (BACKEND_BACKUP, FRONTEND_BACKUP):
+    if not path.is_file():
+        raise SystemExit(
+            f"Missing required backup: {path.name}"
+        )
 
-if not FRONTEND_BACKUP.is_file():
-    raise SystemExit(
-        "ERROR: index_v4_5.html backup is missing."
-    )
-
-py = BACKEND_BACKUP.read_text(
-    encoding="utf-8"
-)
-
-html = FRONTEND_BACKUP.read_text(
-    encoding="utf-8"
-)
+py = BACKEND_BACKUP.read_text(encoding="utf-8")
+html = FRONTEND_BACKUP.read_text(encoding="utf-8")
 
 
 # ============================================================
 # SAFE REPLACEMENT
 # ============================================================
 
-def replace_once(text, old, new, label):
-    count = text.count(old)
+def replace_once(source, old, new, label):
+    count = source.count(old)
 
     if count != 1:
         raise RuntimeError(
-            f"{label}: expected exactly one match, "
-            f"found {count}. No live files changed."
+            f"{label}: expected 1 match, found {count}. "
+            "No live files changed."
         )
 
-    return text.replace(
-        old,
-        new,
-        1,
-    )
+    return source.replace(old, new, 1)
+
+
+def replace_version_labels(source, old, new, label):
+    count = source.count(old)
+
+    if count < 1:
+        raise RuntimeError(
+            f"{label}: version label not found. "
+            "No live files changed."
+        )
+
+    return source.replace(old, new)
 
 
 # ============================================================
 # BACKEND VERSION
 # ============================================================
 
-py = replace_once(
+# FIX: V4.5 occurs more than once in the backend.
+# Replace all occurrences rather than requiring one.
+
+py = replace_version_labels(
     py,
     "PPTX Narrator V4.5",
     "PPTX Narrator V4.6",
-    "Backend documentation",
-)
-
-py = replace_once(
-    py,
-    'title="PPTX Narrator V4.5"',
-    'title="PPTX Narrator V4.6"',
-    "Application title",
+    "Backend version",
 )
 
 py = replace_once(
@@ -121,17 +116,19 @@ py = replace_once(
 
 
 # ============================================================
-# PORTABLE CHECKPOINT SYSTEM
+# PORTABLE CHECKPOINT IMPLEMENTATION
 # ============================================================
 
 PORTABLE_CODE = '''
 # ============================================================
-# V4.6 PORTABLE CHECKPOINT METADATA
+# V4.6 PORTABLE CHECKPOINT SUPPORT
 # ============================================================
 
-PORTABLE_PROGRESS = (
-    "pptx_narrator_v46_progress.json"
-)
+import hashlib
+import zipfile
+import shutil
+
+PORTABLE_PROGRESS = "pptx_narrator_v46_progress.json"
 
 
 def notes_digest(notes):
@@ -140,38 +137,26 @@ def notes_digest(notes):
     ).hexdigest()
 
 
-def portable_metadata(
-    prs,
-    completed,
-    skipped,
-):
+def portable_metadata(prs, completed, skipped):
+    completed = int(completed)
+
     return {
-        "format": (
-            "PPTX_NARRATOR_PORTABLE_CHECKPOINT"
-        ),
+        "format": "PPTX_NARRATOR_PORTABLE_CHECKPOINT",
         "version": "4.6",
-        "completed": int(completed),
+        "completed": completed,
         "total": len(prs.slides),
         "skipped_empty_notes": int(skipped),
         "notes_sha256": [
-            notes_digest(
-                get_notes(prs.slides[i])
-            )
+            notes_digest(get_notes(prs.slides[i]))
             for i in range(completed)
         ],
         "saved_at": int(time.time()),
     }
 
 
-def attach_portable_metadata(
-    path,
-    metadata,
-):
+def attach_portable_metadata(path, metadata):
     """
-    Embed progress information inside PPTX.
-
-    The progress travels with the downloaded
-    PowerPoint file.
+    Embed progress information directly inside PPTX.
     """
 
     temporary = path.with_name(
@@ -179,29 +164,18 @@ def attach_portable_metadata(
     )
 
     try:
-        with zipfile.ZipFile(
-            path,
-            "r",
-        ) as original:
-
+        with zipfile.ZipFile(path, "r") as original:
             with zipfile.ZipFile(
-                temporary,
-                "w",
+                temporary, "w"
             ) as updated:
 
                 for member in original.infolist():
-
-                    if (
-                        member.filename
-                        == PORTABLE_PROGRESS
-                    ):
+                    if member.filename == PORTABLE_PROGRESS:
                         continue
 
                     updated.writestr(
                         member,
-                        original.read(
-                            member.filename
-                        ),
+                        original.read(member.filename),
                     )
 
                 updated.writestr(
@@ -212,49 +186,30 @@ def attach_portable_metadata(
                     ),
                 )
 
-        os.replace(
-            temporary,
-            path,
-        )
+        os.replace(temporary, path)
 
     finally:
-        temporary.unlink(
-            missing_ok=True
-        )
+        temporary.unlink(missing_ok=True)
 
 
-def read_portable_metadata(
-    path,
-    prs,
-):
+def read_portable_metadata(path, prs):
     """
-    Validate uploaded recovery checkpoints.
-
-    A completed narrated slide must still
-    contain its embedded audio.
+    Validate recovery progress and embedded audio.
     """
 
     try:
-        with zipfile.ZipFile(
-            path,
-            "r",
-        ) as archive:
-
-            if (
-                PORTABLE_PROGRESS
-                not in archive.namelist()
-            ):
+        with zipfile.ZipFile(path, "r") as archive:
+            if PORTABLE_PROGRESS not in archive.namelist():
                 return None
 
-            raw = archive.read(
-                PORTABLE_PROGRESS
-            )
+            info = archive.getinfo(PORTABLE_PROGRESS)
 
-            if len(raw) > 1024 * 1024:
+            if info.file_size > 1024 * 1024:
                 raise ValueError(
                     "Checkpoint metadata too large"
                 )
 
+            raw = archive.read(PORTABLE_PROGRESS)
             meta = json.loads(raw)
 
     except (
@@ -278,26 +233,23 @@ def read_portable_metadata(
             "Unrecognized checkpoint format"
         )
 
+    if meta.get("version") != "4.6":
+        raise ValueError(
+            "Unsupported checkpoint version"
+        )
+
     total = len(prs.slides)
-
-    completed = meta.get(
-        "completed"
-    )
-
-    skipped = meta.get(
-        "skipped_empty_notes"
-    )
-
-    hashes = meta.get(
-        "notes_sha256"
-    )
+    completed = meta.get("completed")
+    skipped = meta.get("skipped_empty_notes")
+    hashes = meta.get("notes_sha256")
 
     if (
         type(completed) is not int
         or not 0 <= completed <= total
         or type(skipped) is not int
         or not 0 <= skipped <= completed
-        or meta.get("total") != total
+        or type(meta.get("total")) is not int
+        or meta["total"] != total
         or not isinstance(hashes, list)
         or len(hashes) != completed
     ):
@@ -308,26 +260,18 @@ def read_portable_metadata(
     actual_skipped = 0
 
     for i in range(completed):
-
         slide = prs.slides[i]
+        notes = get_notes(slide)
 
-        notes = get_notes(
-            slide
-        )
-
-        if hashes[i] != notes_digest(
-            notes
-        ):
+        if hashes[i] != notes_digest(notes):
             raise ValueError(
                 f"Checkpoint notes changed "
                 f"on slide {i + 1}"
             )
 
         if notes:
-
             has_audio = any(
-                shape.shape_type
-                == MSO_SHAPE_TYPE.MEDIA
+                shape.shape_type == MSO_SHAPE_TYPE.MEDIA
                 for shape in slide.shapes
             )
 
@@ -336,7 +280,6 @@ def read_portable_metadata(
                     f"Checkpoint audio missing "
                     f"on slide {i + 1}"
                 )
-
         else:
             actual_skipped += 1
 
@@ -352,23 +295,23 @@ def read_portable_metadata(
 
 
 # ============================================================
-# INSERT PORTABLE HELPERS
+# INSERT PORTABLE FUNCTIONS
 # ============================================================
 
-CHECKPOINT_MARKER = """# ============================================================
+MARKER = """# ============================================================
 # CHECKPOINT VALIDATION
 # ============================================================"""
 
 py = replace_once(
     py,
-    CHECKPOINT_MARKER,
-    PORTABLE_CODE + CHECKPOINT_MARKER,
-    "Portable checkpoint helpers",
+    MARKER,
+    PORTABLE_CODE + MARKER,
+    "Portable checkpoint insertion",
 )
 
 
 # ============================================================
-# EMBED PROGRESS WHEN SAVING
+# SAVE PORTABLE CHECKPOINT
 # ============================================================
 
 py = replace_once(
@@ -405,12 +348,12 @@ py = replace_once(
         temporary,
         checkpoint_path(job_dir),
     )''',
-    "Checkpoint saving",
+    "Portable checkpoint saving",
 )
 
 
 # ============================================================
-# RESTORE PROGRESS FROM PORTABLE FILE
+# RECOVER WHEN CHECKPOINT.JSON IS MISSING
 # ============================================================
 
 py = replace_once(
@@ -425,11 +368,8 @@ py = replace_once(
         return status
 
     if not metadata.is_file():
-
         try:
-            prs = Presentation(
-                str(checkpoint)
-            )
+            prs = Presentation(str(checkpoint))
 
             portable = read_portable_metadata(
                 checkpoint,
@@ -438,8 +378,7 @@ py = replace_once(
 
             if (
                 portable
-                and portable["total"]
-                == status["total"]
+                and portable["total"] == status["total"]
             ):
                 status["completed"] = (
                     portable["completed"]
@@ -456,12 +395,12 @@ py = replace_once(
 
         return status
 ''',
-    "Checkpoint recovery",
+    "Checkpoint metadata recovery",
 )
 
 
 # ============================================================
-# DETECT UPLOADED CHECKPOINT
+# DETECT UPLOADED RECOVERY PPTX
 # ============================================================
 
 py = replace_once(
@@ -488,8 +427,7 @@ py = replace_once(
         except ValueError as exc:
             raise HTTPException(
                 400,
-                "Invalid recovery checkpoint: "
-                + str(exc),
+                f"Invalid recovery checkpoint: {exc}",
             ) from exc
 
         recovered = (
@@ -539,7 +477,7 @@ py = replace_once(
             "current_slide": recovered,
             "resumed_from": recovered,
             "portable_checkpoint": bool(portable),''',
-    "Recovered progress",
+    "Recovered slide progress",
 )
 
 py = replace_once(
@@ -553,7 +491,7 @@ py = replace_once(
 
 
 # ============================================================
-# COPY UPLOADED CHECKPOINT INTO NEW JOB
+# PRESERVE UPLOADED CHECKPOINT
 # ============================================================
 
 py = replace_once(
@@ -567,7 +505,6 @@ py = replace_once(
             job_id
         )''',
     '''        if portable:
-
             shutil.copy2(
                 source,
                 checkpoint_path(job_dir),
@@ -577,9 +514,7 @@ py = replace_once(
                 checkpoint_meta_path(job_dir),
                 {
                     "completed": recovered,
-                    "skipped_empty_notes": (
-                        recovered_skipped
-                    ),
+                    "skipped_empty_notes": recovered_skipped,
                     "total": total,
                     "saved_at": int(time.time()),
                 },
@@ -593,7 +528,7 @@ py = replace_once(
         launch_job(
             job_id
         )''',
-    "Initial checkpoint preservation",
+    "Uploaded checkpoint preservation",
 )
 
 
@@ -607,12 +542,7 @@ py = replace_once(
                 or i + 1 == target''',
     '''                (
                     i + 1
-                    - int(
-                        status.get(
-                            "resumed_from",
-                            0,
-                        )
-                    )
+                    - int(status.get("resumed_from", 0))
                 ) % batch_size == 0
                 or i + 1 == target''',
     "Checkpoint interval",
@@ -620,14 +550,14 @@ py = replace_once(
 
 
 # ============================================================
-# BACKEND DOWNLOAD FILENAMES
+# BACKEND FILENAMES
 # ============================================================
 
 py = replace_once(
     py,
     'f"narrated_v4_5_"',
     'f"narrated_v4_6_"',
-    "PPTX filename",
+    "Narrated PPTX filename",
 )
 
 py = replace_once(
@@ -641,14 +571,14 @@ py = replace_once(
     py,
     '"PPTX_with_Speaker_Notes_V4_5.pptx"',
     '"PPTX_with_Speaker_Notes_V4_6.pptx"',
-    "Notes filename",
+    "Notes PPTX filename",
 )
 
 py = replace_once(
     py,
     '"narrated_piper_v4_5.pptx"',
     '"narrated_piper_v4_6.pptx"',
-    "Legacy filename",
+    "Legacy PPTX filename",
 )
 
 
@@ -656,23 +586,25 @@ py = replace_once(
 # FRONTEND VERSION
 # ============================================================
 
-# Replace both version labels together.
-# This avoids the previous duplicate-replacement bug.
+# Match specific HTML elements, not generic text.
 
-if html.count("PPTX Narrator V4.5") != 2:
-    raise RuntimeError(
-        "Unexpected HTML version labels. "
-        "No live files changed."
-    )
+html = replace_once(
+    html,
+    "<title>PPTX Narrator V4.5",
+    "<title>PPTX Narrator V4.6",
+    "HTML title",
+)
 
-html = html.replace(
-    "PPTX Narrator V4.5",
-    "PPTX Narrator V4.6",
+html = replace_once(
+    html,
+    "<h1>🎙 PPTX Narrator V4.5</h1>",
+    "<h1>🎙 PPTX Narrator V4.6</h1>",
+    "HTML heading",
 )
 
 
 # ============================================================
-# FRONTEND CHECKPOINT INSTRUCTIONS
+# FRONTEND INSTRUCTIONS
 # ============================================================
 
 html = replace_once(
@@ -690,7 +622,7 @@ Download completed checkpoints and audio ZIP files promptly.""",
     """Render free storage is temporary.
 <strong>Download your recovery PPTX to your iPad after each checkpoint.</strong>
 Server-side checkpoints can disappear after restarts.""",
-    "Frontend storage warning",
+    "Storage warning",
 )
 
 html = replace_once(
@@ -699,21 +631,21 @@ html = replace_once(
     """<strong>Recovery PPTX: choose 0 to finish remaining slides.</strong>
 <br>
 <strong>3</strong> = first three slides.""",
-    "Frontend slide limit instructions",
+    "Slide limit instructions",
 )
 
 html = replace_once(
     html,
     """The PPTX download becomes available after a checkpoint
 has been saved.""",
-    """⬇️ Download the latest narrated PPTX to your iPad whenever
-a new checkpoint becomes available.
+    """Download the latest narrated PPTX to your iPad
+after each checkpoint.
 
 <br><br>
 
-After a Render restart, upload that saved PPTX in Step 2
-and set Slides to Process = 0.""",
-    "Frontend download instructions",
+After a Render restart, upload that saved PPTX
+in Step 2 and set Slides to Process = 0.""",
+    "Recovery instructions",
 )
 
 
@@ -725,19 +657,19 @@ html = replace_once(
     html,
     'const STORAGE_KEY = "pptx_v45_job";',
     'const STORAGE_KEY = "pptx_v46_job";',
-    "Frontend storage key",
+    "Local storage key",
 )
 
 html = replace_once(
     html,
     'const OLD_STORAGE_KEY = "pptx_v44_job";',
     'const OLD_STORAGE_KEY = "pptx_v45_job";',
-    "Frontend previous storage key",
+    "Previous storage key",
 )
 
 
 # ============================================================
-# FRONTEND RECOVERY PROGRESS
+# FRONTEND PROGRESS
 # ============================================================
 
 html = replace_once(
@@ -745,12 +677,12 @@ html = replace_once(
     '''        `Saved slides: ${completed} / ${target}\\n` +''',
     '''        `Saved slides: ${completed} / ${target}\\n` +
         `Recovered from upload: ${status.resumed_from ?? 0} slides\\n` +''',
-    "Frontend recovery progress",
+    "Recovery progress display",
 )
 
 
 # ============================================================
-# FRONTEND FILE NAMES AND HEALTH
+# FRONTEND FILENAMES AND HEALTH
 # ============================================================
 
 html = replace_once(
@@ -764,65 +696,69 @@ html = replace_once(
     html,
     "Checking V4.5 server configuration…",
     "Checking V4.6 server configuration…",
-    "Frontend health placeholder",
+    "Health placeholder",
 )
 
 html = replace_once(
     html,
     'if (version !== "4.5")',
     'if (version !== "4.6")',
-    "Frontend version comparison",
+    "Backend version comparison",
 )
 
 html = replace_once(
     html,
     "Expected backend V4.5.",
     "Expected backend V4.6.",
-    "Frontend version warning",
+    "Backend version warning",
 )
 
 
 # ============================================================
-# VALIDATE GENERATED FILES
+# VALIDATION
 # ============================================================
 
 ast.parse(py)
 
-if "<script>" not in html:
-    raise RuntimeError(
-        "Generated HTML has no script"
-    )
+required_backend = [
+    "def portable_metadata(",
+    "def attach_portable_metadata(",
+    "def read_portable_metadata(",
+    '"version": "4.6"',
+]
 
-if "</html>" not in html:
-    raise RuntimeError(
-        "Generated HTML is incomplete"
-    )
+for marker in required_backend:
+    if marker not in py:
+        raise RuntimeError(
+            f"Generated backend missing: {marker}"
+        )
 
-if "PPTX Narrator V4.6" not in html:
-    raise RuntimeError(
-        "Frontend version upgrade failed"
-    )
+required_frontend = [
+    "<script>",
+    "</script>",
+    "</html>",
+    "PPTX Narrator V4.6",
+]
 
-if '"version": "4.6"' not in py:
-    raise RuntimeError(
-        "Backend version upgrade failed"
-    )
+for marker in required_frontend:
+    if marker not in html:
+        raise RuntimeError(
+            f"Generated frontend missing: {marker}"
+        )
 
 
 # ============================================================
-# WRITE FILES
+# STAGE GENERATED FILES
 # ============================================================
-
-# Stage both outputs before changing live files.
 
 def stage_text(destination, content):
-    fd, temporary_name = tempfile.mkstemp(
+    fd, filename = tempfile.mkstemp(
         prefix=destination.name + ".",
         suffix=".tmp",
         dir=ROOT,
     )
 
-    temporary = Path(temporary_name)
+    temporary = Path(filename)
 
     try:
         with os.fdopen(
@@ -835,9 +771,7 @@ def stage_text(destination, content):
         return temporary
 
     except Exception:
-        temporary.unlink(
-            missing_ok=True
-        )
+        temporary.unlink(missing_ok=True)
         raise
 
 
@@ -855,9 +789,6 @@ try:
         html,
     )
 
-    # Both generated files have passed basic validation.
-    # The V4.5 backup files remain untouched.
-
     os.replace(
         staged_backend,
         BACKEND_OUTPUT,
@@ -870,32 +801,14 @@ try:
 
 finally:
     if staged_backend is not None:
-        staged_backend.unlink(
-            missing_ok=True
-        )
+        staged_backend.unlink(missing_ok=True)
 
     if staged_frontend is not None:
-        staged_frontend.unlink(
-            missing_ok=True
-        )
+        staged_frontend.unlink(missing_ok=True)
 
 
-print(
-    "SUCCESS: PPTX Narrator V4.6 files generated."
-)
-
-print(
-    "Backend: app.py"
-)
-
-print(
-    "Frontend: index_v4.html"
-)
-
-print(
-    "Original V4.5 backups preserved."
-)
-
-print(
-    "Portable checkpoint recovery enabled."
-)
+print("SUCCESS: Generated PPTX Narrator V4.6.")
+print("Backend: app.py")
+print("Frontend: index_v4.html")
+print("V4.5 backups preserved.")
+print("Portable checkpoint support added.")
