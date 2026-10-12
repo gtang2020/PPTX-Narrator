@@ -2,4 +2,4 @@ fastapi
 uvicorn[standard]
 python-multipart
 python-pptx
-edge-tts
+piper-tts
