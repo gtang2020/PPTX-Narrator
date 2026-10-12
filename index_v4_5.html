@@ -1,1 +1,1370 @@
+<!DOCTYPE html>
+<html lang="en">
 
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>PPTX Narrator V4.5 — Notes & Audio</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    font-family: Arial, Helvetica, sans-serif;
+    max-width: 980px;
+    margin: 20px auto;
+    padding: 18px;
+    background: #fafaff;
+    color: #202235;
+    font-size: 23px;
+    line-height: 1.5;
+}
+
+h1 {
+    font-size: 42px;
+    color: #6033a9;
+    margin-bottom: 8px;
+}
+
+h2 {
+    font-size: 31px;
+    color: #205bb0;
+    margin: 0 0 15px;
+}
+
+h3 {
+    font-size: 26px;
+    color: #6332ad;
+}
+
+.box {
+    background: white;
+    border: 2px solid #ded7f5;
+    border-radius: 15px;
+    padding: 24px;
+    margin: 22px 0;
+}
+
+.step1 {
+    border: 3px solid #218447;
+    background: #f7fff9;
+}
+
+.step2 {
+    border: 3px solid #4f65b8;
+}
+
+input[type="file"],
+select,
+input[type="number"] {
+    font: inherit;
+    max-width: 100%;
+    padding: 10px;
+    border: 2px solid #c6c5d3;
+    border-radius: 8px;
+    background: white;
+}
+
+input[type="file"] {
+    width: 100%;
+}
+
+input[type="number"] {
+    width: 150px;
+}
+
+input[type="checkbox"] {
+    width: 23px;
+    height: 23px;
+    vertical-align: middle;
+}
+
+label {
+    display: block;
+    margin: 15px 0 6px;
+    font-weight: bold;
+}
+
+button,
+.action {
+    font: inherit;
+    display: inline-block;
+    background: #6539b3;
+    color: white;
+    border: 0;
+    border-radius: 11px;
+    padding: 14px 22px;
+    margin: 10px 8px 10px 0;
+    cursor: pointer;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+button:hover,
+.action:hover {
+    filter: brightness(0.9);
+}
+
+button:disabled {
+    background: #aaa;
+    cursor: not-allowed;
+}
+
+.green {
+    background: #15803d;
+}
+
+.secondary {
+    background: #215bb5;
+}
+
+.hidden {
+    display: none !important;
+}
+
+progress {
+    width: 100%;
+    height: 35px;
+    accent-color: #6539b3;
+}
+
+#percent {
+    font-size: 37px;
+    font-weight: bold;
+    color: #6332ad;
+    margin: 8px 0;
+}
+
+#info,
+#notesInfo {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    background: #f2eeff;
+    padding: 17px;
+    border-radius: 12px;
+    min-height: 70px;
+    font-size: 21px;
+}
+
+.small {
+    font-size: 19px;
+    color: #555;
+}
+
+.warning {
+    background: #fff3d6;
+    border-left: 7px solid #d59a00;
+    padding: 18px;
+    border-radius: 9px;
+    font-size: 20px;
+}
+
+.success {
+    color: #147b38;
+    font-weight: bold;
+}
+
+.row {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+
+.row > div {
+    flex: 1;
+    min-width: 220px;
+}
+
+.status {
+    font-size: 20px;
+    color: #52525b;
+    overflow-wrap: anywhere;
+}
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.actions .action {
+    margin: 5px 0;
+}
+
+.tip {
+    background: #eaf6ff;
+    border-radius: 9px;
+    padding: 13px;
+    font-size: 20px;
+}
+
+#serverDetails {
+    background: #eef8ff;
+    padding: 14px;
+    border-radius: 10px;
+    font-size: 19px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 650px) {
+    body {
+        margin: 0;
+        padding: 14px;
+        font-size: 22px;
+    }
+
+    h1 {
+        font-size: 34px;
+    }
+
+    h2 {
+        font-size: 28px;
+    }
+
+    .box {
+        padding: 17px;
+    }
+
+    button,
+    .action {
+        width: 100%;
+        text-align: center;
+        margin: 8px 0;
+    }
+
+    .actions {
+        display: block;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<h1>🎙 PPTX Narrator V4.5</h1>
+
+<p>
+<strong>Free Piper AI Narration for PowerPoint</strong>
+<br>
+Step 1: PPTX + Script → Speaker Notes
+<br>
+Step 2: Speaker Notes → WAV Audio → Narrated PPTX
+</p>
+
+<div class="warning">
+<strong>Recommended: Start with three slides.</strong>
+<br><br>
+V4.5 includes longer Piper synthesis timeouts and
+automatic retries to improve reliability.
+<br><br>
+Render free storage is temporary.
+Download completed checkpoints and audio ZIP files promptly.
+<br><br>
+Audio files are <strong>WAV, not MP3</strong>.
+</div>
+
+<!-- ========================================= -->
+<!-- STEP 1 -->
+<!-- ========================================= -->
+
+<section class="box step1">
+
+<h2>📝 Step 1 — Insert Speaker Notes</h2>
+
+<p>
+Upload your original PowerPoint and a slide-numbered
+DOCX, PDF, or TXT narration script.
+</p>
+
+<p>
+This step does <strong>not</strong> synthesize audio.
+</p>
+
+<form id="notesForm">
+
+<label for="notesPptx">
+PowerPoint (.pptx)
+</label>
+
+<input
+    id="notesPptx"
+    type="file"
+    name="file"
+    accept=".pptx"
+    required
+>
+
+<label for="notesScript">
+Narration Script (.docx, .pdf, .txt)
+</label>
+
+<input
+    id="notesScript"
+    type="file"
+    name="notes_file"
+    accept=".docx,.pdf,.txt"
+    required
+>
+
+<label for="existingNotes">
+Existing Speaker Notes
+</label>
+
+<select id="existingNotes" name="existing_notes">
+
+<option value="replace">
+Replace notes on matched slides
+</option>
+
+<option value="append">
+Append to existing notes
+</option>
+
+<option value="keep">
+Keep existing nonempty notes
+</option>
+
+</select>
+
+<p>
+<label style="font-weight:normal">
+
+<input
+    id="requireAll"
+    type="checkbox"
+    name="require_all"
+    checked
+>
+
+Require narration for every slide
+
+</label>
+</p>
+
+<button
+    id="notesButton"
+    type="submit"
+    class="green"
+>
+📝 Insert Notes & Download PPTX
+</button>
+
+</form>
+
+<div
+    id="notesInfo"
+    role="status"
+    aria-live="polite"
+>
+Ready for Step 1.
+</div>
+
+<p class="small">
+After Step 1, the generated PPTX will also be
+prepared for Step 2 automatically in this browser.
+You can still select a different PPTX manually.
+</p>
+
+</section>
+
+<!-- ========================================= -->
+<!-- STEP 2 -->
+<!-- ========================================= -->
+
+<section class="box step2">
+
+<h2>🎤 Step 2 — Generate Audio & Narrated PPTX</h2>
+
+<form id="form">
+
+<label for="ttsPptx">
+① PowerPoint with Speaker Notes (.pptx)
+</label>
+
+<input
+    id="ttsPptx"
+    type="file"
+    name="file"
+    accept=".pptx"
+    required
+>
+
+<div
+    id="prepared"
+    class="tip hidden"
+    role="status"
+></div>
+
+<label for="ttsScript">
+② Optional Narration Script
+</label>
+
+<input
+    id="ttsScript"
+    type="file"
+    name="notes_file"
+    accept=".docx,.pdf,.txt"
+>
+
+<p class="small">
+Leave this empty if the selected PPTX already
+contains Speaker Notes.
+</p>
+
+<p class="small">
+If you provide a script here, it will be imported
+again before narration.
+</p>
+
+<div class="row">
+
+<div>
+
+<label for="limit">
+③ Slides to Process
+</label>
+
+<input
+    id="limit"
+    type="number"
+    name="limit"
+    value="3"
+    min="0"
+    max="10000"
+    required
+>
+
+<p class="small">
+<strong>3</strong> = first three slides.
+<br>
+<strong>10</strong> = first ten slides.
+<br>
+<strong>0</strong> = all slides.
+</p>
+
+</div>
+
+<div>
+
+<label for="batch">
+④ Save Checkpoint Every N Slides
+</label>
+
+<input
+    id="batch"
+    type="number"
+    name="batch_size"
+    value="1"
+    min="1"
+    max="20"
+    required
+>
+
+<p class="small">
+<strong>1</strong> = safest for testing.
+<br>
+<strong>5</strong> = fewer checkpoint saves.
+</p>
+
+</div>
+
+</div>
+
+<button id="start" type="submit">
+▶️ Start Step 2 — Generate Audio
+</button>
+
+</form>
+
+</section>
+
+<!-- ========================================= -->
+<!-- PROGRESS -->
+<!-- ========================================= -->
+
+<section class="box">
+
+<h2>📊 Narration Progress</h2>
+
+<progress
+    id="bar"
+    value="0"
+    max="100"
+></progress>
+
+<p id="percent">0%</p>
+
+<div
+    id="info"
+    role="status"
+    aria-live="polite"
+>
+Ready. Complete Step 1 or upload a PPTX
+with existing Speaker Notes.
+</div>
+
+<p id="connection" class="status">
+Server status: Checking…
+</p>
+
+</section>
+
+<!-- ========================================= -->
+<!-- DOWNLOAD -->
+<!-- ========================================= -->
+
+<section class="box">
+
+<h2>📥 Download Results</h2>
+
+<div class="actions">
+
+<a
+    id="download"
+    class="action green hidden"
+    href="#"
+>
+⬇️ Download Narrated PPTX
+</a>
+
+<a
+    id="audioDownload"
+    class="action secondary hidden"
+    href="#"
+>
+🎵 Download WAV Segments ZIP
+</a>
+
+</div>
+
+<button
+    id="resume"
+    class="hidden"
+    type="button"
+>
+▶️ Resume / Retry Job
+</button>
+
+<p class="small">
+The PPTX download becomes available after a checkpoint
+has been saved.
+</p>
+
+<p class="small">
+The WAV ZIP contains audio from slides included
+in saved checkpoints.
+</p>
+
+<p class="small">
+Keep copies of your original PPTX and narration script.
+</p>
+
+</section>
+
+<!-- ========================================= -->
+<!-- SERVER INFORMATION -->
+<!-- ========================================= -->
+
+<section class="box">
+
+<h2>🖥 Piper Server Information</h2>
+
+<div id="serverDetails">
+Checking V4.5 server configuration…
+</div>
+
+<button
+    id="checkServer"
+    type="button"
+    class="secondary"
+>
+🔄 Refresh Server Status
+</button>
+
+</section>
+
+<script>
+"use strict";
+
+/* =========================================
+   ELEMENT REFERENCES
+========================================= */
+
+const $ = id => document.getElementById(id);
+
+const notesForm = $("notesForm");
+const form = $("form");
+
+const notesButton = $("notesButton");
+const notesInfo = $("notesInfo");
+
+const info = $("info");
+const bar = $("bar");
+const percent = $("percent");
+
+const download = $("download");
+const audioDownload = $("audioDownload");
+
+const resume = $("resume");
+const start = $("start");
+
+const connection = $("connection");
+const prepared = $("prepared");
+
+const serverDetails = $("serverDetails");
+const checkServer = $("checkServer");
+
+/* =========================================
+   GLOBAL STATE
+========================================= */
+
+const STORAGE_KEY = "pptx_v45_job";
+const OLD_STORAGE_KEY = "pptx_v44_job";
+
+let jobId = null;
+let timer = null;
+let polling = false;
+let lastStatus = null;
+let networkFailures = 0;
+let requestInProgress = false;
+
+let preparedFile = null;
+
+/* =========================================
+   UTILITIES
+========================================= */
+
+function errorText(error) {
+    return error && error.message
+        ? error.message
+        : String(error);
+}
+
+async function readJson(response) {
+    let data;
+
+    try {
+        data = await response.json();
+    } catch {
+        throw new Error(
+            `HTTP ${response.status}: Non-JSON server response`
+        );
+    }
+
+    if (!response.ok) {
+        let detail =
+            data.detail ||
+            data.error ||
+            "Request failed";
+
+        if (typeof detail !== "string") {
+            detail = JSON.stringify(detail);
+        }
+
+        throw new Error(
+            `HTTP ${response.status}: ${detail}`
+        );
+    }
+
+    return data;
+}
+
+function saveId(id) {
+    try {
+        localStorage.setItem(STORAGE_KEY, id);
+    } catch {
+        // Storage may be unavailable.
+    }
+}
+
+function loadId() {
+    try {
+        const current = localStorage.getItem(STORAGE_KEY);
+
+        if (current) {
+            return current;
+        }
+
+        const previous = localStorage.getItem(OLD_STORAGE_KEY);
+
+        if (previous) {
+            localStorage.setItem(STORAGE_KEY, previous);
+            return previous;
+        }
+
+        return null;
+    } catch {
+        return null;
+    }
+}
+
+function clearId() {
+    try {
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(OLD_STORAGE_KEY);
+    } catch {
+        // Ignore storage errors.
+    }
+}
+
+function stopPolling() {
+    if (timer !== null) {
+        clearInterval(timer);
+        timer = null;
+    }
+}
+
+function startPolling() {
+    stopPolling();
+
+    if (jobId) {
+        timer = setInterval(poll, 3000);
+    }
+}
+
+function setLink(element, url) {
+    if (url) {
+        element.href = url;
+        element.classList.remove("hidden");
+    } else {
+        element.removeAttribute("href");
+        element.classList.add("hidden");
+    }
+}
+
+/* =========================================
+   PREPARE STEP 1 FILE FOR STEP 2
+========================================= */
+
+function setJobFile(file) {
+    preparedFile = file;
+
+    prepared.textContent =
+        `✓ Step 1 result ready for Step 2: ${file.name} ` +
+        `(${(file.size / 1048576).toFixed(1)} MB).`;
+
+    prepared.classList.remove("hidden");
+
+    try {
+        const dt = new DataTransfer();
+
+        dt.items.add(file);
+
+        $("ttsPptx").files = dt.files;
+    } catch {
+        prepared.textContent +=
+            " The generated PPTX is retained in this page. " +
+            "You can proceed to Step 2.";
+    }
+}
+
+$("ttsPptx").addEventListener("change", () => {
+    preparedFile = null;
+    prepared.classList.add("hidden");
+});
+
+/* =========================================
+   STEP 1 — INSERT NOTES
+========================================= */
+
+notesForm.addEventListener(
+    "submit",
+    async event => {
+        event.preventDefault();
+
+        notesButton.disabled = true;
+
+        notesInfo.textContent =
+            "Inserting Speaker Notes…";
+
+        try {
+            const data = new FormData(notesForm);
+
+            data.set(
+                "require_all",
+                $("requireAll").checked ? "true" : "false"
+            );
+
+            const response = await fetch(
+                "/notes/insert",
+                {
+                    method: "POST",
+                    body: data
+                }
+            );
+
+            if (!response.ok) {
+                await readJson(response);
+            }
+
+            const blob = await response.blob();
+
+            const filename =
+                "PPTX_with_Speaker_Notes_V4_5.pptx";
+
+            const url = URL.createObjectURL(blob);
+
+            const link = document.createElement("a");
+
+            link.href = url;
+            link.download = filename;
+
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+
+            setTimeout(
+                () => URL.revokeObjectURL(url),
+                60000
+            );
+
+            const file = new File(
+                [blob],
+                filename,
+                {
+                    type:
+                        "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                }
+            );
+
+            setJobFile(file);
+
+            const imported =
+                response.headers.get("X-Notes-Imported") || "?";
+
+            const total =
+                response.headers.get("X-Total-Slides") || "?";
+
+            notesInfo.textContent =
+                "✅ Speaker Notes inserted successfully.\n\n" +
+                `Imported: ${imported} / ${total} slides.\n\n` +
+                "PPTX download started.\n\n" +
+                "Inspect the notes before starting Step 2.";
+
+        } catch (error) {
+            notesInfo.textContent =
+                "⚠️ Step 1 error:\n" +
+                errorText(error);
+        } finally {
+            notesButton.disabled = false;
+        }
+    }
+);
+
+/* =========================================
+   UPDATE NARRATION STATUS
+========================================= */
+
+function renderStatus(status) {
+    lastStatus = status;
+
+    const target = Number(status.target) || 1;
+    const completed = Number(status.completed) || 0;
+
+    const progress = Math.max(
+        0,
+        Math.min(
+            100,
+            Math.round(completed / target * 100)
+        )
+    );
+
+    bar.value = progress;
+    percent.textContent = progress + "%";
+
+    const state = status.state || "unknown";
+
+    let message =
+        `Status: ${state}\n\n` +
+        `Current slide: ${status.current_slide ?? 0} / ${target}\n` +
+        `Saved slides: ${completed} / ${target}\n` +
+        `Imported notes: ${status.imported_notes ?? 0}\n` +
+        `Slides with notes: ${status.notes_in_target ?? 0}\n` +
+        `Skipped empty notes: ${status.skipped_empty_notes ?? 0}`;
+
+    if (status.last_slide_seconds != null) {
+        message +=
+            `\nLast slide audio: ` +
+            `${status.last_slide_seconds} seconds`;
+    }
+
+    if (status.last_slide_segments != null) {
+        message +=
+            `\nLast slide narration segments: ` +
+            status.last_slide_segments;
+    } else if (status.last_slide_chunks != null) {
+        message +=
+            `\nLast slide audio chunks: ` +
+            status.last_slide_chunks;
+    }
+
+    if (status.error) {
+        message +=
+            "\n\n⚠️ Error:\n" +
+            status.error;
+    }
+
+    if (state === "completed") {
+        message +=
+            "\n\n✅ Narration completed successfully!";
+    }
+
+    if (state === "running") {
+        message +=
+            "\n\n🎙 Generating narration…";
+    }
+
+    if (state === "queued") {
+        message +=
+            "\n\n⏳ Waiting for Piper…";
+    }
+
+    if (state === "interrupted") {
+        message +=
+            "\n\n⚠️ Job interrupted. " +
+            "Resume if the server still has its files.";
+    }
+
+    info.textContent = message;
+
+    setLink(
+        download,
+        status.download_url || null
+    );
+
+    setLink(
+        audioDownload,
+        status.audio_download_url || null
+    );
+
+    const finished = [
+        "completed",
+        "failed",
+        "interrupted"
+    ].includes(state);
+
+    const resumable = [
+        "failed",
+        "interrupted"
+    ].includes(state);
+
+    resume.classList.toggle(
+        "hidden",
+        !resumable
+    );
+
+    start.disabled = !finished;
+
+    connection.textContent =
+        "Server status: Connected";
+
+    if (finished) {
+        stopPolling();
+    }
+}
+
+/* =========================================
+   LOST JOB
+========================================= */
+
+function lostJob() {
+    stopPolling();
+
+    jobId = null;
+    lastStatus = null;
+
+    clearId();
+
+    start.disabled = false;
+
+    resume.classList.add("hidden");
+
+    setLink(download, null);
+    setLink(audioDownload, null);
+
+    connection.textContent =
+        "Server status: Job not found";
+
+    info.textContent =
+        "⚠️ Job not found.\n\n" +
+        "Render may have restarted and deleted " +
+        "temporary files.\n\n" +
+        "Start a new job using your saved PPTX.";
+}
+
+/* =========================================
+   POLL JOB STATUS
+========================================= */
+
+async function poll() {
+    if (!jobId || polling) {
+        return;
+    }
+
+    polling = true;
+
+    const requested = jobId;
+
+    try {
+        const response = await fetch(
+            `/jobs/${encodeURIComponent(requested)}`,
+            {
+                cache: "no-store"
+            }
+        );
+
+        const status = await readJson(response);
+
+        if (jobId !== requested) {
+            return;
+        }
+
+        networkFailures = 0;
+
+        renderStatus(status);
+
+    } catch (error) {
+        if (jobId !== requested) {
+            return;
+        }
+
+        const message = errorText(error);
+
+        if (message.includes("HTTP 404")) {
+            lostJob();
+            return;
+        }
+
+        networkFailures++;
+
+        connection.textContent =
+            `Server status: Connection problem (${networkFailures})`;
+
+        info.textContent =
+            "⚠️ Could not check job status:\n" +
+            message +
+            "\n\nThe page will retry automatically.";
+
+    } finally {
+        polling = false;
+    }
+}
+
+/* =========================================
+   START NEW JOB
+========================================= */
+
+form.addEventListener(
+    "submit",
+    async event => {
+        event.preventDefault();
+
+        if (requestInProgress) {
+            return;
+        }
+
+        requestInProgress = true;
+
+        stopPolling();
+
+        jobId = null;
+        lastStatus = null;
+        networkFailures = 0;
+
+        clearId();
+
+        setLink(download, null);
+        setLink(audioDownload, null);
+
+        resume.classList.add("hidden");
+
+        bar.value = 0;
+        percent.textContent = "0%";
+
+        start.disabled = true;
+
+        info.textContent =
+            "Uploading PPTX and starting narration…";
+
+        connection.textContent =
+            "Server status: Uploading";
+
+        try {
+            const data = new FormData(form);
+
+            if (preparedFile) {
+                data.set(
+                    "file",
+                    preparedFile,
+                    preparedFile.name
+                );
+            }
+
+            const pptx = data.get("file");
+
+            if (
+                !(pptx instanceof File) ||
+                !pptx.size
+            ) {
+                throw new Error(
+                    "Choose a PowerPoint with Speaker Notes."
+                );
+            }
+
+            const response = await fetch(
+                "/jobs",
+                {
+                    method: "POST",
+                    body: data
+                }
+            );
+
+            const result = await readJson(response);
+
+            if (!result.job_id) {
+                throw new Error(
+                    "Server did not return a job ID."
+                );
+            }
+
+            jobId = result.job_id;
+
+            saveId(jobId);
+
+            info.textContent =
+                `Job created: ${jobId}\n\n` +
+                "Starting Piper narration…";
+
+            await poll();
+
+            if (
+                jobId &&
+                (
+                    !lastStatus ||
+                    ![
+                        "completed",
+                        "failed",
+                        "interrupted"
+                    ].includes(lastStatus.state)
+                )
+            ) {
+                startPolling();
+            }
+
+        } catch (error) {
+            info.textContent =
+                "⚠️ Step 2 error:\n" +
+                errorText(error);
+
+            connection.textContent =
+                "Server status: Upload failed";
+
+            start.disabled = false;
+        } finally {
+            requestInProgress = false;
+        }
+    }
+);
+
+/* =========================================
+   RESUME FAILED JOB
+========================================= */
+
+resume.addEventListener(
+    "click",
+    async () => {
+        if (!jobId) {
+            return;
+        }
+
+        resume.disabled = true;
+
+        try {
+            const response = await fetch(
+                `/jobs/${encodeURIComponent(jobId)}/resume`,
+                {
+                    method: "POST"
+                }
+            );
+
+            await readJson(response);
+
+            resume.classList.add("hidden");
+
+            start.disabled = true;
+            lastStatus = null;
+
+            await poll();
+
+            if (
+                jobId &&
+                (
+                    !lastStatus ||
+                    ![
+                        "completed",
+                        "failed",
+                        "interrupted"
+                    ].includes(lastStatus.state)
+                )
+            ) {
+                startPolling();
+            }
+
+        } catch (error) {
+            if (
+                errorText(error).includes("HTTP 404")
+            ) {
+                lostJob();
+            } else {
+                info.textContent =
+                    "⚠️ Resume error:\n" +
+                    errorText(error);
+            }
+        } finally {
+            resume.disabled = false;
+        }
+    }
+);
+
+/* =========================================
+   CHECK SERVER HEALTH
+========================================= */
+
+async function checkHealth() {
+    checkServer.disabled = true;
+
+    serverDetails.textContent =
+        "Checking Piper server…";
+
+    try {
+        const response = await fetch(
+            "/health",
+            {
+                cache: "no-store"
+            }
+        );
+
+        const health = await readJson(response);
+
+        const version = health.version || "unknown";
+
+        const modelReady =
+            health.model_exists === true;
+
+        const piperReady =
+            health.piper_exists === true;
+
+        let details =
+            `Backend version: V${version}\n` +
+            `Engine: ${health.engine || "unknown"}\n` +
+            `Piper executable: ${piperReady ? "Ready" : "Missing"}\n` +
+            `Voice model: ${modelReady ? "Ready" : "Missing"}\n` +
+            `DOCX support: ${health.docx_supported ? "Yes" : "No"}\n` +
+            `TXT support: ${health.txt_supported ? "Yes" : "No"}\n` +
+            `PDF support: ${health.pdf_supported ? "Yes" : "No"}\n` +
+            `WAV ZIP: ${health.segment_audio_zip ? "Yes" : "No"}`;
+
+        if (health.piper_timeout != null) {
+            details +=
+                `\nPiper timeout: ${health.piper_timeout} seconds`;
+        }
+
+        if (health.piper_retries != null) {
+            details +=
+                `\nPiper retries: ${health.piper_retries}`;
+        }
+
+        if (health.piper_max_chars != null) {
+            details +=
+                `\nPiper maximum chunk: ${health.piper_max_chars} characters`;
+        }
+
+        if (health.segment_resume != null) {
+            details +=
+                `\nSegment recovery: ${health.segment_resume ? "Enabled" : "Disabled"}`;
+        }
+
+        if (health.active_jobs != null) {
+            details +=
+                `\nActive narration jobs: ${health.active_jobs}`;
+        }
+
+        if (version !== "4.5") {
+            details +=
+                "\n\n⚠️ Expected backend V4.5.";
+        }
+
+        if (!piperReady || !modelReady) {
+            details +=
+                "\n\n⚠️ Piper narration is not ready.";
+        } else {
+            details +=
+                "\n\n✅ Piper server is ready.";
+        }
+
+        serverDetails.textContent = details;
+
+        connection.textContent =
+            `Server status: Connected · Backend V${version}`;
+
+    } catch (error) {
+        serverDetails.textContent =
+            "⚠️ Server health check failed:\n" +
+            errorText(error);
+
+        connection.textContent =
+            "Server status: Health check failed";
+
+    } finally {
+        checkServer.disabled = false;
+    }
+}
+
+checkServer.addEventListener(
+    "click",
+    checkHealth
+);
+
+/* =========================================
+   INITIALIZE
+========================================= */
+
+async function initialize() {
+    await checkHealth();
+
+    const saved = loadId();
+
+    if (saved) {
+        jobId = saved;
+
+        info.textContent =
+            "Checking previous narration job…";
+
+        await poll();
+
+        if (
+            jobId &&
+            (
+                !lastStatus ||
+                ![
+                    "completed",
+                    "failed",
+                    "interrupted"
+                ].includes(lastStatus.state)
+            )
+        ) {
+            startPolling();
+        }
+    }
+}
+
+initialize();
+
+</script>
+
+</body>
+</html>
