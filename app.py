@@ -1,23 +1,26 @@
 """
-PPTX Narrator V4.1
+PPTX Narrator V4.2
 
 Free Piper TTS
-PPTX + DOCX/PDF/TXT Speaker Notes
+PPTX + DOCX / PDF / TXT Speaker Notes
 
 Features:
-- Import external Speaker Notes
-- Match notes by slide number
-- Preserve PowerPoint slide visuals
-- Generate complete narration
+- Import external Speaker Notes by slide number
+- Preserve slide visuals and Speaker Notes
+- Complete Piper narration
 - Replace existing audio
 - Autoplay narration
 - Advance 2 seconds after narration
 - Background processing
 - Batch checkpoints
-- Progress display
-- Resume interrupted jobs when local files remain
+- Download checkpoints
+- Resume jobs while server files remain
+- Recover from checkpoint/status mismatch
+- Limit concurrent synthesis to one job
 
-PDF support requires PyMuPDF.
+IMPORTANT:
+Render free storage is temporary.
+Download checkpoints frequently.
 """
 
 import hashlib
@@ -74,9 +77,7 @@ if not hasattr(Part, "sha1"):
 # SETTINGS
 # =====================================================
 
-app = FastAPI(
-    title="PPTX Narrator V4.1"
-)
+app = FastAPI(title="PPTX Narrator V4.2")
 
 ROOT = Path(__file__).resolve().parent
 
@@ -113,12 +114,13 @@ PPTX_MIME = (
     "presentationml.presentation"
 )
 
-executor = ThreadPoolExecutor(
-    max_workers=1
-)
+executor = ThreadPoolExecutor(max_workers=1)
 
 active_jobs = set()
 active_lock = threading.Lock()
+
+# Avoid multiple large jobs waiting in memory.
+MAX_ACTIVE_JOBS = 1
 
 
 def ptag(name):
@@ -134,9 +136,7 @@ def home():
 
     return (
         ROOT / "index_v4.html"
-    ).read_text(
-        encoding="utf-8"
-    )
+    ).read_text(encoding="utf-8")
 
 
 @app.get("/health")
@@ -150,7 +150,7 @@ def health():
 
     return {
         "status": "ok",
-        "version": "4.1",
+        "version": "4.2",
         "engine": "Piper",
         "model_exists": MODEL.is_file(),
         "external_notes": True,
@@ -161,6 +161,7 @@ def health():
         "autoplay": True,
         "batch_processing": True,
         "storage_persistent": False,
+        "active_jobs": len(active_jobs),
     }
 
 
@@ -181,47 +182,41 @@ def save_json(path, data):
         encoding="utf-8",
     )
 
-    os.replace(
-        temporary,
-        path,
-    )
+    os.replace(temporary, path)
 
 
 def read_status(job_id):
 
-    if not re.fullmatch(
-        r"[a-f0-9]{32}",
-        job_id,
-    ):
+    if not re.fullmatch(r"[a-f0-9]{32}", job_id):
         raise HTTPException(
             400,
             "Invalid job ID",
         )
 
-    path = (
-        WORKDIR
-        / job_id
-        / "status.json"
-    )
+    path = WORKDIR / job_id / "status.json"
 
     if not path.is_file():
         raise HTTPException(
             404,
-            "Job not found. Server may have restarted.",
+            "Job not found. "
+            "The server may have restarted. "
+            "Start a new job.",
         )
 
-    return json.loads(
-        path.read_text(
-            encoding="utf-8"
+    try:
+        return json.loads(
+            path.read_text(encoding="utf-8")
         )
-    )
+    except Exception:
+        raise HTTPException(
+            500,
+            "Job status file is damaged",
+        )
 
 
 def update_status(job_dir, status):
 
-    status["updated_at"] = int(
-        time.time()
-    )
+    status["updated_at"] = int(time.time())
 
     save_json(
         job_dir / "status.json",
@@ -230,7 +225,7 @@ def update_status(job_dir, status):
 
 
 # =====================================================
-# READ EXISTING POWERPOINT NOTES
+# POWERPOINT SPEAKER NOTES
 # =====================================================
 
 def get_notes(slide):
@@ -238,9 +233,7 @@ def get_notes(slide):
     if not slide.has_notes_slide:
         return ""
 
-    frame = (
-        slide.notes_slide.notes_text_frame
-    )
+    frame = slide.notes_slide.notes_text_frame
 
     if frame is None:
         return ""
@@ -250,9 +243,7 @@ def get_notes(slide):
 
 def set_notes(slide, text):
 
-    frame = (
-        slide.notes_slide.notes_text_frame
-    )
+    frame = slide.notes_slide.notes_text_frame
 
     if frame is None:
         raise RuntimeError(
@@ -263,7 +254,7 @@ def set_notes(slide, text):
 
 
 # =====================================================
-# READ EXTERNAL TXT
+# READ TXT
 # =====================================================
 
 def read_txt(data):
@@ -275,7 +266,6 @@ def read_txt(data):
     ):
         try:
             return data.decode(encoding)
-
         except UnicodeError:
             continue
 
@@ -285,16 +275,10 @@ def read_txt(data):
 
 
 # =====================================================
-# READ EXTERNAL DOCX
+# READ DOCX
 # =====================================================
 
 def read_docx(data):
-    """
-    Read paragraphs and tables from DOCX.
-
-    Uses Python standard library.
-    No python-docx dependency required.
-    """
 
     W = (
         "http://schemas.openxmlformats.org/"
@@ -307,34 +291,24 @@ def read_docx(data):
     with zipfile.ZipFile(
         io.BytesIO(data)
     ) as archive:
-
-        xml = archive.read(
-            "word/document.xml"
-        )
+        xml = archive.read("word/document.xml")
 
     root = ET.fromstring(xml)
-
-    body = root.find(
-        wtag("body")
-    )
+    body = root.find(wtag("body"))
 
     if body is None:
         return ""
 
     lines = []
 
-    for paragraph in body.iter(
-        wtag("p")
-    ):
+    for paragraph in body.iter(wtag("p")):
 
         pieces = []
 
         for node in paragraph.iter():
 
             if node.tag == wtag("t"):
-                pieces.append(
-                    node.text or ""
-                )
+                pieces.append(node.text or "")
 
             elif node.tag == wtag("tab"):
                 pieces.append("\t")
@@ -354,18 +328,16 @@ def read_docx(data):
 
 
 # =====================================================
-# READ EXTERNAL PDF
+# READ PDF
 # =====================================================
 
 def read_pdf(data):
 
     try:
         import fitz
-
     except ImportError:
         raise RuntimeError(
-            "PDF support requires PyMuPDF. "
-            "Add pymupdf to requirements.txt"
+            "PDF support requires PyMuPDF"
         )
 
     document = fitz.open(
@@ -374,22 +346,16 @@ def read_pdf(data):
     )
 
     try:
-        pages = [
-            page.get_text(
-                "text",
-                sort=True,
-            )
+        return "\n".join(
+            page.get_text("text", sort=True)
             for page in document
-        ]
-
-        return "\n".join(pages)
-
+        )
     finally:
         document.close()
 
 
 # =====================================================
-# IDENTIFY SLIDE NUMBER HEADINGS
+# PARSE SLIDE HEADINGS
 # =====================================================
 
 SLIDE_HEADING = re.compile(
@@ -406,25 +372,11 @@ SLIDE_HEADING = re.compile(
 
 
 def parse_slide_notes(text):
-    """
-    Expected headings:
-
-    Slide 001 — Introduction
-    Slide 002 — Membrane Structure
-    Slide 003: Transport
-
-    Text between headings belongs to
-    the preceding slide.
-
-    Duplicate slide numbers are rejected.
-    """
 
     text = text.replace(
-        "\r\n",
-        "\n",
+        "\r\n", "\n"
     ).replace(
-        "\r",
-        "\n",
+        "\r", "\n"
     )
 
     matches = list(
@@ -433,7 +385,7 @@ def parse_slide_notes(text):
 
     if not matches:
         raise RuntimeError(
-            "No slide-number headings found. "
+            "No slide headings found. "
             "Use Slide 001, Slide 002, etc."
         )
 
@@ -441,9 +393,7 @@ def parse_slide_notes(text):
 
     for index, match in enumerate(matches):
 
-        slide_number = int(
-            match.group(1)
-        )
+        number = int(match.group(1))
 
         start = match.end()
 
@@ -453,28 +403,22 @@ def parse_slide_notes(text):
             else len(text)
         )
 
-        narration = text[
-            start:end
-        ].strip()
+        narration = text[start:end].strip()
 
-        if slide_number in notes:
+        if number in notes:
             raise RuntimeError(
-                f"Duplicate Slide {slide_number}"
+                f"Duplicate Slide {number}"
             )
 
         if not narration:
             raise RuntimeError(
-                f"Slide {slide_number} has empty narration"
+                f"Slide {number} has empty narration"
             )
 
-        notes[slide_number] = narration
+        notes[number] = narration
 
     return notes
 
-
-# =====================================================
-# IMPORT NOTES INTO POWERPOINT
-# =====================================================
 
 def import_external_notes(
     prs,
@@ -482,62 +426,38 @@ def import_external_notes(
     filename,
 ):
 
-    extension = Path(
-        filename
-    ).suffix.lower()
+    extension = Path(filename).suffix.lower()
 
     if extension == ".txt":
-
-        text = read_txt(
-            notes_data
-        )
+        text = read_txt(notes_data)
 
     elif extension == ".docx":
-
-        text = read_docx(
-            notes_data
-        )
+        text = read_docx(notes_data)
 
     elif extension == ".pdf":
-
-        text = read_pdf(
-            notes_data
-        )
+        text = read_pdf(notes_data)
 
     else:
         raise RuntimeError(
             "Notes must be DOCX, PDF, or TXT"
         )
 
-    mapping = parse_slide_notes(
-        text
-    )
+    mapping = parse_slide_notes(text)
 
-    total = len(
-        prs.slides
-    )
+    total = len(prs.slides)
 
-    unexpected = [
-        number
-        for number in mapping
-        if number < 1 or number > total
-    ]
+    for number in mapping:
 
-    if unexpected:
-        raise RuntimeError(
-            "Notes contain slide numbers "
-            "outside the PPTX range: "
-            + str(unexpected[:10])
-        )
+        if not 1 <= number <= total:
+            raise RuntimeError(
+                f"Slide {number} is outside "
+                f"the PPTX range 1-{total}"
+            )
 
     for number, narration in mapping.items():
 
-        slide = prs.slides[
-            number - 1
-        ]
-
         set_notes(
-            slide,
+            prs.slides[number - 1],
             narration,
         )
 
@@ -545,13 +465,10 @@ def import_external_notes(
 
 
 # =====================================================
-# SPLIT LONG NARRATION
+# SPLIT NARRATION
 # =====================================================
 
-def split_narration(
-    text,
-    max_chars=240,
-):
+def split_narration(text, max_chars=240):
 
     sentences = re.split(
         r"(?<=[.!?。！？])\s+",
@@ -574,11 +491,9 @@ def split_narration(
             + 1
             <= max_chars
         ):
-
             current = (
                 current + " " + sentence
             ).strip()
-
             continue
 
         if current:
@@ -588,21 +503,18 @@ def split_narration(
         while len(sentence) > max_chars:
 
             cut = sentence.rfind(
-                " ",
-                0,
-                max_chars + 1,
+                " ", 0, max_chars + 1
             )
 
             if cut <= 0:
                 cut = max_chars
 
-            chunks.append(
-                sentence[:cut].strip()
-            )
+            part = sentence[:cut].strip()
 
-            sentence = sentence[
-                cut:
-            ].strip()
+            if part:
+                chunks.append(part)
+
+            sentence = sentence[cut:].strip()
 
         current = sentence
 
@@ -613,13 +525,10 @@ def split_narration(
 
 
 # =====================================================
-# PIPER SYNTHESIS
+# PIPER TTS
 # =====================================================
 
-def piper_chunk(
-    text,
-    output_path,
-):
+def piper_chunk(text, output_path):
 
     result = subprocess.run(
         [
@@ -636,7 +545,6 @@ def piper_chunk(
     )
 
     if result.returncode != 0:
-
         raise RuntimeError(
             result.stderr[-500:]
             or "Piper generation failed"
@@ -646,7 +554,6 @@ def piper_chunk(
         not output_path.is_file()
         or output_path.stat().st_size < 100
     ):
-
         raise RuntimeError(
             "Piper produced no audio"
         )
@@ -659,9 +566,7 @@ def generate_complete_wav(text):
             "Piper model is missing"
         )
 
-    chunks = split_narration(
-        text
-    )
+    chunks = split_narration(text)
 
     if not chunks:
         raise RuntimeError(
@@ -680,31 +585,22 @@ def generate_complete_wav(text):
                 / f"chunk_{index:04d}.wav"
             )
 
-            piper_chunk(
-                chunk,
-                path,
-            )
-
+            piper_chunk(chunk, path)
             paths.append(path)
 
-        output = (
-            directory
-            / "complete.wav"
-        )
+        output = directory / "complete.wav"
 
         reference = None
         total_frames = 0
 
         with wave.open(
-            str(output),
-            "wb",
+            str(output), "wb"
         ) as destination:
 
             for path in paths:
 
                 with wave.open(
-                    str(path),
-                    "rb",
+                    str(path), "rb"
                 ) as source:
 
                     params = (
@@ -731,7 +627,6 @@ def generate_complete_wav(text):
                         )
 
                     elif params != reference:
-
                         raise RuntimeError(
                             "WAV formats differ"
                         )
@@ -745,18 +640,12 @@ def generate_complete_wav(text):
                             "Empty WAV chunk"
                         )
 
-                    destination.writeframes(
-                        frames
-                    )
+                    destination.writeframes(frames)
 
-                    total_frames += (
-                        source.getnframes()
-                    )
+                    total_frames += source.getnframes()
 
         duration_ms = round(
-            1000
-            * total_frames
-            / reference[2]
+            1000 * total_frames / reference[2]
         )
 
         return (
@@ -771,58 +660,37 @@ def generate_complete_wav(text):
 # =====================================================
 
 def remove_old_audio(slide):
-    """
-    Same behavior as V3.
 
-    Existing media shapes and timing
-    animations are removed.
-    """
-
-    for shape in list(
-        slide.shapes
-    ):
+    for shape in list(slide.shapes):
 
         if (
             shape.shape_type
             == MSO_SHAPE_TYPE.MEDIA
         ):
-
             slide.shapes._spTree.remove(
                 shape._element
             )
 
+    # This also removes existing animations.
     for timing in list(
-        slide._element.findall(
-            ptag("timing")
-        )
+        slide._element.findall(ptag("timing"))
     ):
-
-        slide._element.remove(
-            timing
-        )
+        slide._element.remove(timing)
 
 
 # =====================================================
-# INSERT NEW AUDIO
+# INSERT AUDIO
 # =====================================================
 
-def insert_wav(
-    slide,
-    audio_bytes,
-):
+def insert_wav(slide, audio_bytes):
 
     with tempfile.NamedTemporaryFile(
         suffix=".wav",
         delete=False,
     ) as temporary:
 
-        temporary.write(
-            audio_bytes
-        )
-
-        path = Path(
-            temporary.name
-        )
+        temporary.write(audio_bytes)
+        path = Path(temporary.name)
 
     try:
 
@@ -838,10 +706,7 @@ def insert_wav(
         return shape.shape_id
 
     finally:
-
-        path.unlink(
-            missing_ok=True
-        )
+        path.unlink(missing_ok=True)
 
 
 # =====================================================
@@ -856,25 +721,18 @@ def configure_autoplay(
 ):
 
     for old in list(
-        slide._element.findall(
-            ptag("timing")
-        )
+        slide._element.findall(ptag("timing"))
     ):
-
         slide._element.remove(old)
 
-    timing = etree.Element(
-        ptag("timing")
-    )
+    timing = etree.Element(ptag("timing"))
 
     tn_list = etree.SubElement(
-        timing,
-        ptag("tnLst")
+        timing, ptag("tnLst")
     )
 
     par = etree.SubElement(
-        tn_list,
-        ptag("par")
+        tn_list, ptag("par")
     )
 
     root = etree.SubElement(
@@ -888,12 +746,12 @@ def configure_autoplay(
 
     children = etree.SubElement(
         root,
-        ptag("childTnLst")
+        ptag("childTnLst"),
     )
 
     audio = etree.SubElement(
         children,
-        ptag("audio")
+        ptag("audio"),
     )
 
     media = etree.SubElement(
@@ -912,7 +770,7 @@ def configure_autoplay(
 
     conditions = etree.SubElement(
         media_timing,
-        ptag("stCondLst")
+        ptag("stCondLst"),
     )
 
     etree.SubElement(
@@ -923,7 +781,7 @@ def configure_autoplay(
 
     target = etree.SubElement(
         media,
-        ptag("tgtEl")
+        ptag("tgtEl"),
     )
 
     etree.SubElement(
@@ -937,17 +795,12 @@ def configure_autoplay(
     )
 
     if extension is not None:
-
         slide._element.insert(
             slide._element.index(extension),
             timing,
         )
-
     else:
-
-        slide._element.append(
-            timing
-        )
+        slide._element.append(timing)
 
     transition = slide._element.find(
         ptag("transition")
@@ -966,10 +819,7 @@ def configure_autoplay(
 
     if advance:
 
-        transition.set(
-            "advClick",
-            "0",
-        )
+        transition.set("advClick", "0")
 
         transition.set(
             "advTm",
@@ -981,110 +831,151 @@ def configure_autoplay(
 
     else:
 
-        transition.set(
-            "advClick",
-            "1",
-        )
+        transition.set("advClick", "1")
 
         transition.attrib.pop(
-            "advTm",
-            None,
+            "advTm", None
         )
 
 
 # =====================================================
-# VALIDATION AND CHECKPOINTS
+# VALIDATE PPTX
 # =====================================================
 
-def validate_pptx(
-    path,
-    expected_slides,
-):
+def validate_pptx(path, expected_slides):
 
-    with zipfile.ZipFile(
-        path
-    ) as archive:
+    with zipfile.ZipFile(path) as archive:
 
         if archive.testzip() is not None:
-
             raise RuntimeError(
                 "PPTX ZIP validation failed"
             )
 
-    check = Presentation(
-        str(path)
-    )
+    check = Presentation(str(path))
 
     if len(check.slides) != expected_slides:
-
         raise RuntimeError(
             "Slide count changed"
         )
+
+
+# =====================================================
+# CHECKPOINT STORAGE
+# =====================================================
+
+def checkpoint_path(job_dir):
+    return job_dir / "checkpoint.pptx"
+
+
+def checkpoint_meta_path(job_dir):
+    return job_dir / "checkpoint.json"
 
 
 def save_checkpoint(
     prs,
     job_dir,
     total,
+    completed,
+    skipped,
 ):
 
     temporary = (
-        job_dir
-        / "checkpoint.tmp.pptx"
+        job_dir / "checkpoint.tmp.pptx"
     )
 
-    destination = (
-        job_dir
-        / "checkpoint.pptx"
+    destination = checkpoint_path(job_dir)
+
+    prs.save(str(temporary))
+
+    validate_pptx(temporary, total)
+
+    os.replace(temporary, destination)
+
+    save_json(
+        checkpoint_meta_path(job_dir),
+        {
+            "completed": completed,
+            "skipped_empty_notes": skipped,
+            "total": total,
+            "saved_at": int(time.time()),
+        },
     )
 
-    prs.save(
-        str(temporary)
-    )
 
-    validate_pptx(
-        temporary,
-        total,
-    )
+def restore_checkpoint_status(job_dir, status):
 
-    os.replace(
-        temporary,
-        destination,
-    )
+    checkpoint = checkpoint_path(job_dir)
+    metadata = checkpoint_meta_path(job_dir)
+
+    if not checkpoint.is_file():
+        return status
+
+    if not metadata.is_file():
+        return status
+
+    try:
+
+        saved = json.loads(
+            metadata.read_text(
+                encoding="utf-8"
+            )
+        )
+
+        completed = int(
+            saved["completed"]
+        )
+
+        if (
+            0 <= completed <= status["target"]
+        ):
+            status["completed"] = completed
+
+            status["skipped_empty_notes"] = int(
+                saved.get(
+                    "skipped_empty_notes", 0
+                )
+            )
+
+            status["checkpoint_available"] = True
+
+    except Exception:
+        pass
+
+    return status
 
 
 # =====================================================
-# BACKGROUND JOB
+# BACKGROUND PROCESSING
 # =====================================================
 
 def process_job(job_id):
 
-    job_dir = (
-        WORKDIR
-        / job_id
-    )
+    job_dir = WORKDIR / job_id
 
-    status = read_status(
-        job_id
-    )
+    try:
+        status = read_status(job_id)
+    except HTTPException:
+        with active_lock:
+            active_jobs.discard(job_id)
+        return
 
     try:
 
-        status["state"] = "running"
-
-        update_status(
+        status = restore_checkpoint_status(
             job_dir,
             status,
         )
+
+        status["state"] = "running"
+        status["error"] = None
+
+        update_status(job_dir, status)
 
         total = status["total"]
         target = status["target"]
         batch_size = status["batch_size"]
 
-        checkpoint = (
-            job_dir
-            / "checkpoint.pptx"
-        )
+        checkpoint = checkpoint_path(job_dir)
 
         source = (
             checkpoint
@@ -1092,31 +983,18 @@ def process_job(job_id):
             else job_dir / "input.pptx"
         )
 
-        prs = Presentation(
-            str(source)
-        )
+        prs = Presentation(str(source))
 
-        completed = int(
-            status["completed"]
-        )
+        completed = int(status["completed"])
 
-        for i in range(
-            completed,
-            target,
-        ):
+        for i in range(completed, target):
 
             status["current_slide"] = i + 1
 
-            update_status(
-                job_dir,
-                status,
-            )
+            update_status(job_dir, status)
 
             slide = prs.slides[i]
-
-            note = get_notes(
-                slide
-            )
+            note = get_notes(slide)
 
             if note:
 
@@ -1124,13 +1002,9 @@ def process_job(job_id):
                     audio_bytes,
                     duration_ms,
                     chunk_count,
-                ) = generate_complete_wav(
-                    note
-                )
+                ) = generate_complete_wav(note)
 
-                remove_old_audio(
-                    slide
-                )
+                remove_old_audio(slide)
 
                 shape_id = insert_wav(
                     slide,
@@ -1145,16 +1019,16 @@ def process_job(job_id):
                 )
 
                 status["last_slide_seconds"] = round(
-                    duration_ms / 1000,
-                    1,
+                    duration_ms / 1000, 1
                 )
 
                 status["last_slide_chunks"] = (
                     chunk_count
                 )
 
-            else:
+                del audio_bytes
 
+            else:
                 status["skipped_empty_notes"] += 1
 
             if (
@@ -1166,23 +1040,20 @@ def process_job(job_id):
                     prs,
                     job_dir,
                     total,
+                    i + 1,
+                    status["skipped_empty_notes"],
                 )
 
                 status["completed"] = i + 1
 
                 status["checkpoint_available"] = True
 
-            update_status(
-                job_dir,
-                status,
-            )
+            update_status(job_dir, status)
 
         status["state"] = "completed"
+        status["current_slide"] = target
 
-        update_status(
-            job_dir,
-            status,
-        )
+        update_status(job_dir, status)
 
     except Exception as exc:
 
@@ -1194,18 +1065,15 @@ def process_job(job_id):
             f"{str(exc)[:400]}"
         )
 
-        update_status(
-            job_dir,
-            status,
-        )
+        try:
+            update_status(job_dir, status)
+        except Exception:
+            pass
 
     finally:
 
         with active_lock:
-
-            active_jobs.discard(
-                job_id
-            )
+            active_jobs.discard(job_id)
 
 
 def launch_job(job_id):
@@ -1215,20 +1083,30 @@ def launch_job(job_id):
         if job_id in active_jobs:
             return False
 
-        active_jobs.add(
-            job_id
-        )
+        if len(active_jobs) >= MAX_ACTIVE_JOBS:
+            raise HTTPException(
+                429,
+                "Another narration job is running. "
+                "Please wait.",
+            )
 
-    executor.submit(
-        process_job,
-        job_id,
-    )
+        active_jobs.add(job_id)
+
+    try:
+        executor.submit(
+            process_job,
+            job_id,
+        )
+    except Exception:
+        with active_lock:
+            active_jobs.discard(job_id)
+        raise
 
     return True
 
 
 # =====================================================
-# UPLOAD PPTX + OPTIONAL NOTES
+# CREATE JOB
 # =====================================================
 
 @app.post("/jobs")
@@ -1245,54 +1123,54 @@ async def create_job(
             ".pptx"
         )
     ):
-
         raise HTTPException(
             400,
             "Upload a PPTX file",
         )
 
     if limit < 0:
-
         raise HTTPException(
             400,
             "Invalid slide limit",
         )
 
     if not 1 <= batch_size <= 20:
-
         raise HTTPException(
             400,
             "Batch size must be 1-20",
         )
 
     if not MODEL.is_file():
-
         raise HTTPException(
             500,
             "Piper model is missing",
         )
 
+    # Reject a new job before processing upload
+    # if another job is already running.
+    with active_lock:
+        if len(active_jobs) >= MAX_ACTIVE_JOBS:
+            raise HTTPException(
+                429,
+                "Another narration job is running. "
+                "Please wait.",
+            )
+
     job_id = uuid.uuid4().hex
+    job_dir = WORKDIR / job_id
 
-    job_dir = (
-        WORKDIR
-        / job_id
+    job_dir.mkdir(
+        parents=True,
+        exist_ok=False,
     )
 
-    job_dir.mkdir()
-
-    source = (
-        job_dir
-        / "input.pptx"
-    )
+    source = job_dir / "input.pptx"
 
     try:
 
         size = 0
 
-        with source.open(
-            "wb"
-        ) as output:
+        with source.open("wb") as output:
 
             while True:
 
@@ -1306,35 +1184,24 @@ async def create_job(
                 size += len(chunk)
 
                 if size > MAX_BYTES:
-
                     raise HTTPException(
                         413,
                         "PPTX exceeds 150 MB",
                     )
 
-                output.write(
-                    chunk
-                )
+                output.write(chunk)
 
         try:
-
-            prs = Presentation(
-                str(source)
-            )
-
+            prs = Presentation(str(source))
         except Exception:
-
             raise HTTPException(
                 400,
                 "Invalid PPTX",
             )
 
-        total = len(
-            prs.slides
-        )
+        total = len(prs.slides)
 
         if total == 0:
-
             raise HTTPException(
                 400,
                 "PPTX contains no slides",
@@ -1358,7 +1225,6 @@ async def create_job(
             )
 
             if len(notes_data) > MAX_NOTES_BYTES:
-
                 raise HTTPException(
                     413,
                     "Notes file exceeds 25 MB",
@@ -1373,31 +1239,20 @@ async def create_job(
                 )
 
             except Exception as exc:
-
                 raise HTTPException(
                     400,
                     "Notes import failed: "
                     + str(exc)[:400],
                 )
 
-            # Save imported Speaker Notes
-            # before starting background work.
-
-            prs.save(
-                str(source)
-            )
+            prs.save(str(source))
 
         notes_found = sum(
-            bool(
-                get_notes(
-                    prs.slides[i]
-                )
-            )
+            bool(get_notes(prs.slides[i]))
             for i in range(target)
         )
 
         if notes_found == 0:
-
             raise HTTPException(
                 400,
                 "No Speaker Notes found. "
@@ -1420,14 +1275,9 @@ async def create_job(
             "created_at": int(time.time()),
         }
 
-        update_status(
-            job_dir,
-            status,
-        )
+        update_status(job_dir, status)
 
-        launch_job(
-            job_id
-        )
+        launch_job(job_id)
 
         return status
 
@@ -1442,35 +1292,33 @@ async def create_job(
 
 
 # =====================================================
-# CHECK PROGRESS
+# JOB STATUS
 # =====================================================
 
 @app.get("/jobs/{job_id}")
 def job_status(job_id: str):
 
-    status = read_status(
-        job_id
+    status = read_status(job_id)
+
+    job_dir = WORKDIR / job_id
+
+    status = restore_checkpoint_status(
+        job_dir,
+        status,
     )
 
     with active_lock:
-
-        is_active = (
-            job_id in active_jobs
-        )
+        is_active = job_id in active_jobs
 
     if (
-        status["state"] in (
-            "running",
-            "queued",
-        )
+        status["state"] in ("running", "queued")
         and not is_active
     ):
-
         status["state"] = "interrupted"
 
     status["download_url"] = (
         f"/jobs/{job_id}/download"
-        if status["checkpoint_available"]
+        if checkpoint_path(job_dir).is_file()
         else None
     )
 
@@ -1478,23 +1326,19 @@ def job_status(job_id: str):
 
 
 # =====================================================
-# RESUME
+# RESUME JOB
 # =====================================================
 
 @app.post("/jobs/{job_id}/resume")
 def resume_job(job_id: str):
 
-    status = read_status(
-        job_id
-    )
+    status = read_status(job_id)
 
     if status["state"] == "completed":
         return status
 
     with active_lock:
-
         if job_id in active_jobs:
-
             raise HTTPException(
                 409,
                 "Job is already running",
@@ -1508,32 +1352,30 @@ def resume_job(job_id: str):
         status,
     )
 
-    launch_job(
-        job_id
-    )
+    launch_job(job_id)
 
     return status
 
 
 # =====================================================
-# DOWNLOAD PPTX
+# DOWNLOAD CHECKPOINT
 # =====================================================
 
 @app.get("/jobs/{job_id}/download")
 def download_job(job_id: str):
 
-    status = read_status(
-        job_id
+    status = read_status(job_id)
+
+    job_dir = WORKDIR / job_id
+
+    status = restore_checkpoint_status(
+        job_dir,
+        status,
     )
 
-    path = (
-        WORKDIR
-        / job_id
-        / "checkpoint.pptx"
-    )
+    path = checkpoint_path(job_dir)
 
     if not path.is_file():
-
         raise HTTPException(
             404,
             "No checkpoint available",
@@ -1543,7 +1385,7 @@ def download_job(job_id: str):
         str(path),
         media_type=PPTX_MIME,
         filename=(
-            f"narrated_v4_1_"
+            f"narrated_v4_2_"
             f"{status['completed']}_"
             f"of_{status['total']}.pptx"
         ),
@@ -1551,7 +1393,7 @@ def download_job(job_id: str):
 
 
 # =====================================================
-# COMPATIBILITY WITH OLD V3 WEBSITE
+# V3 COMPATIBILITY
 # =====================================================
 
 @app.post("/process")
@@ -1563,36 +1405,25 @@ async def legacy_process(
     limit: int = Form(0),
 ):
 
-    raw = await file.read(
-        MAX_BYTES + 1
-    )
+    raw = await file.read(MAX_BYTES + 1)
 
     if len(raw) > MAX_BYTES:
-
         raise HTTPException(
             413,
             "PPTX exceeds 150 MB",
         )
 
     try:
-
-        prs = Presentation(
-            io.BytesIO(raw)
-        )
-
+        prs = Presentation(io.BytesIO(raw))
     except Exception:
-
         raise HTTPException(
             400,
             "Invalid PPTX",
         )
 
-    total = len(
-        prs.slides
-    )
+    total = len(prs.slides)
 
     if limit < 0:
-
         raise HTTPException(
             400,
             "Invalid slide limit",
@@ -1605,9 +1436,7 @@ async def legacy_process(
     )
 
     notes = [
-        get_notes(
-            prs.slides[i]
-        )
+        get_notes(prs.slides[i])
         for i in range(count)
     ]
 
@@ -1641,14 +1470,12 @@ async def legacy_process(
         )
 
     if mode != "tts":
-
         raise HTTPException(
             400,
             "Invalid mode",
         )
 
     if not any(notes):
-
         raise HTTPException(
             400,
             "No Speaker Notes found",
@@ -1661,23 +1488,16 @@ async def legacy_process(
 
         try:
 
-            (
-                audio,
-                duration,
-                _,
-            ) = generate_complete_wav(
-                note
+            audio, duration, _ = (
+                generate_complete_wav(note)
             )
 
             slide = prs.slides[i]
 
-            remove_old_audio(
-                slide
-            )
+            remove_old_audio(slide)
 
             shape_id = insert_wav(
-                slide,
-                audio
+                slide, audio
             )
 
             configure_autoplay(
@@ -1688,18 +1508,13 @@ async def legacy_process(
             )
 
         except Exception as exc:
-
             raise HTTPException(
                 500,
                 f"Slide {i + 1}: {str(exc)[:300]}",
             )
 
     output = io.BytesIO()
-
-    prs.save(
-        output
-    )
-
+    prs.save(output)
     output.seek(0)
 
     return StreamingResponse(
@@ -1707,6 +1522,6 @@ async def legacy_process(
         media_type=PPTX_MIME,
         headers={
             "Content-Disposition":
-            'attachment; filename="narrated_piper_v4_1.pptx"'
+            'attachment; filename="narrated_piper_v4_2.pptx"'
         },
     )
