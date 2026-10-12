@@ -1,117 +1,254 @@
 <!DOCTYPE html>
 <html lang="zh">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
 
-<title>PPTX Narrator V4</title>
+<meta charset="utf-8">
+
+<meta
+name="viewport"
+content="width=device-width, initial-scale=1"
+>
+
+<title>PPTX Narrator V4.1</title>
 
 <style>
+
 body {
     font-family: Arial, sans-serif;
-    max-width: 850px;
-    margin: 32px auto;
-    padding: 0 20px;
-    font-size: 22px;
+    max-width: 900px;
+    margin: 30px auto;
+    padding: 20px;
+    font-size: 24px;
     line-height: 1.5;
+    background: #fafaff;
 }
 
 h1 {
-    color: #6135ae;
+    color: #6332ad;
+    font-size: 38px;
 }
 
-button, input {
-    font-size: 21px;
+h2 {
+    color: #215bb5;
+    font-size: 29px;
+}
+
+.box {
+    background: white;
+    padding: 24px;
+    margin: 20px 0;
+    border-radius: 14px;
+    border: 2px solid #ded7f5;
+}
+
+input {
+    font-size: 22px;
     padding: 10px;
-    margin: 8px 0;
+    max-width: 100%;
 }
 
 button {
-    background: #6135ae;
+    font-size: 24px;
+    padding: 16px 25px;
+    margin: 12px 0;
+    border: none;
+    border-radius: 10px;
+    background: #673ab7;
     color: white;
-    border: 0;
-    border-radius: 8px;
     cursor: pointer;
+}
+
+button:hover {
+    background: #4a268e;
 }
 
 progress {
     width: 100%;
-    height: 30px;
-}
-
-a {
-    font-weight: bold;
+    height: 34px;
 }
 
 #info {
     white-space: pre-wrap;
-    background: #f3efff;
-    padding: 18px;
-    border-radius: 10px;
+    background: #f0ebff;
+    padding: 20px;
+    border-radius: 12px;
+    font-size: 23px;
 }
+
+#download {
+    display: none;
+    background: #16803c;
+    color: white;
+    padding: 17px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-size: 23px;
+}
+
+#resume {
+    display: none;
+}
+
+.small {
+    font-size: 19px;
+    color: #555;
+}
+
 </style>
+
 </head>
 
 <body>
 
-<h1>🎙 PPTX Narrator V4</h1>
+<h1>🎙 PPTX Narrator V4.1</h1>
 
 <p>
-上传包含 Speaker Notes 的 PPTX。
-免费 Piper 配音，分批保存，自动播放，
-配音结束 2 秒后翻页。
+<strong>
+Free AI Narration for PowerPoint
+</strong>
+</p>
+
+<p>
+PPTX + DOCX / PDF / TXT
+→ Speaker Notes
+→ Piper Audio
+→ Narrated PPTX
 </p>
 
 <form id="form">
 
-<label>
-PPTX 文件：
-<input type="file" name="file" accept=".pptx" required>
-</label>
+<div class="box">
 
+<h2>① Upload PowerPoint</h2>
+
+<p>
+Select your PowerPoint presentation.
+</p>
+
+<input
+type="file"
+name="file"
+accept=".pptx"
+required
+>
+
+</div>
+
+<div class="box">
+
+<h2>② Upload Speaker Notes</h2>
+
+<p>
+Select a DOCX, PDF, or TXT file.
+</p>
+
+<input
+type="file"
+name="notes_file"
+accept=".docx,.pdf,.txt"
+>
+
+<p class="small">
+Optional if Speaker Notes are already
+inside your PowerPoint.
+</p>
+
+<p class="small">
+External Notes should contain headings
+such as Slide 001, Slide 002, Slide 003.
+</p>
+
+</div>
+
+<div class="box">
+
+<h2>③ Narration Settings</h2>
+
+<p>
+Slides to process:
+</p>
+
+<input
+type="number"
+name="limit"
+value="3"
+min="0"
+max="10000"
+>
+
+<p class="small">
+3 = test first three slides.
 <br>
+0 = process all slides.
+</p>
 
-<label>
-测试前 N 张（0 = 全部）：
-<input type="number" name="limit" value="3" min="0" max="10000">
-</label>
+<p>
+Save after every:
+</p>
 
-<br>
+<input
+type="number"
+name="batch_size"
+value="1"
+min="1"
+max="20"
+>
 
-<label>
-每批保存张数：
-<input type="number" name="batch_size" value="5" min="1" max="20">
-</label>
+<p class="small">
+Recommended: 1 for testing;
+5 for larger presentations.
+</p>
 
-<br>
+</div>
 
 <button type="submit">
-开始后台配音
+▶️ Start AI Narration
 </button>
 
 </form>
 
-<p>
-<progress id="bar" value="0" max="100"></progress>
+<div class="box">
+
+<h2>④ Processing Progress</h2>
+
+<progress
+id="bar"
+value="0"
+max="100">
+</progress>
+
+<p id="percent">
+0%
 </p>
 
 <div id="info">
-等待上传。
+Waiting for upload.
 </div>
 
+</div>
+
+<div class="box">
+
+<h2>⑤ Download PowerPoint</h2>
+
 <p>
-<a id="download" style="display:none" href="#">
-📥 下载已完成批次 / 完整 PPTX
+<a
+id="download"
+href="#">
+📥 Download Narrated PPTX
 </a>
 </p>
 
-<button id="resume" style="display:none">
-继续 / 重试
+<button id="resume">
+▶️ Resume / Retry
 </button>
 
-<p style="font-size:17px">
-注意：Render 免费服务器重启可能清除工作文件。
-请及时下载检查点。
+</div>
+
+<p class="small">
+Important: Render free hosting may restart
+and remove temporary files. Download
+completed checkpoints promptly.
 </p>
 
 <script>
@@ -119,139 +256,250 @@ PPTX 文件：
 let jobId = null;
 let timer = null;
 
+const form = document.getElementById("form");
 const info = document.getElementById("info");
 const bar = document.getElementById("bar");
-const dl = document.getElementById("download");
+const percent = document.getElementById("percent");
+const download = document.getElementById("download");
 const resume = document.getElementById("resume");
+
 
 async function poll() {
 
-    if (!jobId) return;
+    if (!jobId) {
+        return;
+    }
 
     try {
 
-        const response = await fetch("/jobs/" + jobId);
+        const response = await fetch(
+            "/jobs/" + jobId
+        );
+
         const status = await response.json();
 
         if (!response.ok) {
-            throw Error(status.detail || "状态查询失败");
+
+            throw new Error(
+                status.detail || "Status error"
+            );
+
         }
 
-        bar.value = Math.round(
-            100 * status.completed / status.target
+        const progress = Math.round(
+            100
+            * status.completed
+            / status.target
         );
 
+        bar.value = progress;
+
+        percent.textContent =
+            progress + "%";
+
         info.textContent =
-            "任务：" + status.state +
-            "\n正在处理：" +
-            status.current_slide + " / " + status.target +
-            "\n已保存检查点：" +
-            status.completed + " / " + status.target +
-            "\n跳过空 Notes：" +
+            "Status: " + status.state +
+            "\n\nCurrent Slide: " +
+            status.current_slide +
+            " / " + status.target +
+            "\n\nSaved Slides: " +
+            status.completed +
+            " / " + status.target +
+            "\n\nImported Notes: " +
+            status.imported_notes +
+            "\n\nSlides With Notes: " +
+            status.notes_in_target +
+            "\n\nSkipped Empty Notes: " +
             status.skipped_empty_notes +
-            "\n" + (status.error || "");
+            "\n\n" +
+            (status.error || "");
 
         if (status.download_url) {
-            dl.href = status.download_url;
-            dl.style.display = "inline";
+
+            download.href =
+                status.download_url;
+
+            download.style.display =
+                "inline-block";
+
         }
 
-        resume.style.display =
-            ["failed", "interrupted"].includes(status.state)
-            ? "inline"
-            : "none";
+        if (
+            status.state === "failed"
+            || status.state === "interrupted"
+        ) {
+
+            resume.style.display =
+                "inline-block";
+
+        } else {
+
+            resume.style.display =
+                "none";
+
+        }
 
         if (
-            status.state === "completed" ||
-            status.state === "failed" ||
-            status.state === "interrupted"
+            status.state === "completed"
+            || status.state === "failed"
+            || status.state === "interrupted"
         ) {
+
+            clearInterval(timer);
+
+            timer = null;
+
+        }
+
+    } catch (error) {
+
+        info.textContent =
+            "Connection error: "
+            + error.message;
+
+        if (timer) {
             clearInterval(timer);
             timer = null;
         }
 
-    } catch (error) {
-
-        info.textContent =
-            "连接中断：" + error.message;
-
-        clearInterval(timer);
-        timer = null;
     }
+
 }
 
-document.getElementById("form").onsubmit =
-async function(event) {
+
+form.onsubmit = async function(event) {
 
     event.preventDefault();
 
-    info.textContent = "正在上传…";
+    info.textContent =
+        "Uploading files...";
 
-    dl.style.display = "none";
+    bar.value = 0;
+
+    percent.textContent = "0%";
+
+    download.style.display = "none";
+
     resume.style.display = "none";
 
-    const data = new FormData(event.target);
+    const data = new FormData(form);
 
     try {
 
-        const response = await fetch("/jobs", {
-            method: "POST",
-            body: data
-        });
+        const response = await fetch(
+            "/jobs",
+            {
+                method: "POST",
+                body: data
+            }
+        );
 
-        const status = await response.json();
+        const result = await response.json();
 
         if (!response.ok) {
-            throw Error(status.detail || "上传失败");
+
+            throw new Error(
+                result.detail || "Upload failed"
+            );
+
         }
 
-        jobId = status.job_id;
+        jobId = result.job_id;
 
-        localStorage.setItem("pptx_job", jobId);
+        localStorage.setItem(
+            "pptx_v41_job",
+            jobId
+        );
 
-        if (timer) clearInterval(timer);
+        if (timer) {
+            clearInterval(timer);
+        }
 
         await poll();
 
-        timer = setInterval(poll, 3000);
+        if (timer === null) {
+
+            timer = setInterval(
+                poll,
+                3000
+            );
+
+        }
 
     } catch (error) {
 
         info.textContent =
-            "错误：" + error.message;
+            "Error: " + error.message;
+
     }
+
 };
+
 
 resume.onclick = async function() {
 
-    if (!jobId) return;
-
-    const response = await fetch(
-        "/jobs/" + jobId + "/resume",
-        { method: "POST" }
-    );
-
-    if (!response.ok) {
-        info.textContent =
-            "继续失败：" + await response.text();
+    if (!jobId) {
         return;
     }
 
-    if (timer) clearInterval(timer);
+    try {
 
-    await poll();
+        const response = await fetch(
+            "/jobs/" + jobId + "/resume",
+            {
+                method: "POST"
+            }
+        );
 
-    timer = setInterval(poll, 3000);
+        if (!response.ok) {
+
+            throw new Error(
+                await response.text()
+            );
+
+        }
+
+        if (timer) {
+            clearInterval(timer);
+        }
+
+        await poll();
+
+        timer = setInterval(
+            poll,
+            3000
+        );
+
+    } catch (error) {
+
+        info.textContent =
+            "Resume failed: "
+            + error.message;
+
+    }
+
 };
 
-jobId = localStorage.getItem("pptx_job");
+
+jobId = localStorage.getItem(
+    "pptx_v41_job"
+);
 
 if (jobId) {
+
     poll().then(function() {
+
         if (timer === null) {
-            timer = setInterval(poll, 3000);
+
+            timer = setInterval(
+                poll,
+                3000
+            );
+
         }
+
     });
+
 }
 
 </script>
