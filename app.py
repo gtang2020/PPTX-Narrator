@@ -1,75 +1,160 @@
-"""Free PPTX Narrator: Piper TTS, replace old audio, autoplay."""
+"""
+PPTX Narrator - Free Piper TTS
+Version: Safe Audio Replacement
+
+Features:
+- Free Piper TTS
+- No OpenAI API key
+- Extract Speaker Notes
+- Remove old slide audio
+- Insert new WAV narration
+- Preserve PowerPoint content
+- Avoid custom autoplay XML
+"""
 
 import io
 import hashlib
 import subprocess
 import tempfile
 import wave
+import zipfile
+
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse, StreamingResponse
-from lxml import etree
+from fastapi import (
+    FastAPI,
+    UploadFile,
+    File,
+    Form,
+    HTTPException,
+)
+
+from fastapi.responses import (
+    HTMLResponse,
+    StreamingResponse,
+)
+
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.opc.package import Part
 
-# Fix compatibility with some python-pptx versions.
+
+# =====================================================
+# COMPATIBILITY FIX
+# =====================================================
+
 if not hasattr(Part, "sha1"):
+
     Part.sha1 = property(
-        lambda self: hashlib.sha1(self.blob).hexdigest()
+        lambda self: hashlib.sha1(
+            self.blob
+        ).hexdigest()
     )
 
-app = FastAPI(title="Free PowerPoint Narrator")
+
+# =====================================================
+# APPLICATION SETTINGS
+# =====================================================
+
+app = FastAPI(
+    title="Free PowerPoint Narrator"
+)
 
 ROOT = Path(__file__).resolve().parent
-MODEL = ROOT / "models" / "en_US-lessac-low.onnx"
+
+MODEL = (
+    ROOT
+    / "models"
+    / "en_US-lessac-low.onnx"
+)
 
 MAX_BYTES = 150 * 1024 * 1024
-
-P = "http://schemas.openxmlformats.org/presentationml/2006/main"
 
 PPTX_MIME = (
     "application/vnd.openxmlformats-officedocument."
     "presentationml.presentation"
 )
 
+P_NS = (
+    "http://schemas.openxmlformats.org/"
+    "presentationml/2006/main"
+)
+
+AUDIO_EXTENSIONS = (
+    ".mp3",
+    ".m4a",
+    ".wav",
+    ".wma",
+    ".aac",
+)
+
+
+# =====================================================
+# WEBSITE
+# =====================================================
 
 @app.get("/", response_class=HTMLResponse)
 def home():
-    return (ROOT / "index.html").read_text(encoding="utf-8")
 
+    return (
+        ROOT / "index.html"
+    ).read_text(
+        encoding="utf-8"
+    )
+
+
+# =====================================================
+# HEALTH CHECK
+# =====================================================
 
 @app.get("/health")
 def health():
+
     return {
         "status": "ok",
         "engine": "Piper TTS",
         "model_exists": MODEL.exists(),
         "api_key_required": False,
+        "version": "safe-audio-replacement",
     }
 
 
-def notes_of(slide):
+# =====================================================
+# EXTRACT SPEAKER NOTES
+# =====================================================
+
+def get_notes(slide):
+
     if not slide.has_notes_slide:
         return ""
 
-    tf = slide.notes_slide.notes_text_frame
+    frame = (
+        slide.notes_slide.notes_text_frame
+    )
 
-    return tf.text.strip() if tf is not None else ""
+    if frame is None:
+        return ""
+
+    return frame.text.strip()
 
 
-def tts_wav(text):
-    """Generate free WAV narration using Piper."""
+# =====================================================
+# GENERATE FREE PIPER SPEECH
+# =====================================================
+
+def generate_wav(text):
 
     if not MODEL.is_file():
+
         raise RuntimeError(
-            "Piper model is missing in /models"
+            "Piper voice model is missing"
         )
 
     with tempfile.TemporaryDirectory() as td:
 
-        path = Path(td) / "speech.wav"
+        wav_path = (
+            Path(td) / "narration.wav"
+        )
 
         result = subprocess.run(
             [
@@ -77,7 +162,7 @@ def tts_wav(text):
                 "--model",
                 str(MODEL),
                 "--output_file",
-                str(path),
+                str(wav_path),
             ],
             input=text,
             text=True,
@@ -85,168 +170,110 @@ def tts_wav(text):
             timeout=240,
         )
 
-        if result.returncode != 0 or not path.exists():
+        if result.returncode != 0:
+
             raise RuntimeError(
-                (result.stderr or "Piper produced no WAV")[-500:]
+                result.stderr[-400:]
+                or "Piper generation failed"
             )
 
-        with wave.open(str(path), "rb") as wf:
-            duration_ms = int(
-                wf.getnframes() * 1000 / wf.getframerate()
+        if not wav_path.exists():
+
+            raise RuntimeError(
+                "Piper did not produce audio"
             )
 
-        if duration_ms <= 0:
-            raise RuntimeError("Empty audio")
+        with wave.open(
+            str(wav_path),
+            "rb"
+        ) as wav_file:
 
-        return path.read_bytes(), duration_ms
+            duration = (
+                wav_file.getnframes()
+                / wav_file.getframerate()
+            )
+
+        if duration <= 0:
+
+            raise RuntimeError(
+                "Generated audio is empty"
+            )
+
+        return wav_path.read_bytes()
 
 
-def remove_old_media(slide):
-    """Remove old SayTXT audio and media animations."""
+# =====================================================
+# REMOVE OLD AUDIO SHAPES
+# =====================================================
+
+def remove_old_audio(slide):
+
+    removed_ids = set()
 
     for shape in list(slide.shapes):
 
-        if shape.shape_type == MSO_SHAPE_TYPE.MEDIA:
-            slide.shapes._spTree.remove(shape._element)
+        if (
+            shape.shape_type
+            == MSO_SHAPE_TYPE.MEDIA
+        ):
 
-    for timing in slide._element.findall(
-        f"{{{P}}}timing"
-    ):
-        slide._element.remove(timing)
+            removed_ids.add(
+                str(shape.shape_id)
+            )
 
+            slide.shapes._spTree.remove(
+                shape._element
+            )
 
-def configure_autoplay(
-    slide,
-    shape_id,
-    duration_ms,
-    advance=True,
-):
-    """Set audio to start automatically."""
+    # Remove existing media timing information.
+    #
+    # IMPORTANT:
+    # This also removes other animations on a slide
+    # that contained media. It is a temporary safety
+    # measure until autoplay is rebuilt correctly.
 
-    timing = etree.SubElement(
-        slide._element,
-        f"{{{P}}}timing"
-    )
+    if removed_ids:
 
-    tn_list = etree.SubElement(
-        timing,
-        f"{{{P}}}tnLst"
-    )
-
-    par = etree.SubElement(
-        tn_list,
-        f"{{{P}}}par"
-    )
-
-    root_tn = etree.SubElement(
-        par,
-        f"{{{P}}}cTn",
-        id="1",
-        dur="indefinite",
-        restart="never",
-        nodeType="tmRoot",
-    )
-
-    children = etree.SubElement(
-        root_tn,
-        f"{{{P}}}childTnLst"
-    )
-
-    video = etree.SubElement(
-        children,
-        f"{{{P}}}video"
-    )
-
-    media = etree.SubElement(
-        video,
-        f"{{{P}}}cMediaNode",
-        vol="80000",
-    )
-
-    media_tn = etree.SubElement(
-        media,
-        f"{{{P}}}cTn",
-        id="2",
-        fill="hold",
-        display="0",
-    )
-
-    conds = etree.SubElement(
-        media_tn,
-        f"{{{P}}}stCondLst"
-    )
-
-    etree.SubElement(
-        conds,
-        f"{{{P}}}cond",
-        delay="0",
-    )
-
-    target = etree.SubElement(
-        media,
-        f"{{{P}}}tgtEl"
-    )
-
-    etree.SubElement(
-        target,
-        f"{{{P}}}spTgt",
-        spid=str(shape_id),
-    )
-
-    transition = slide._element.find(
-        f"{{{P}}}transition"
-    )
-
-    if transition is None:
-
-        transition = etree.Element(
-            f"{{{P}}}transition"
+        timing_tag = (
+            "{" + P_NS + "}timing"
         )
 
-        slide._element.insert(
-            slide._element.index(timing),
-            transition,
-        )
+        for timing in list(
+            slide._element.findall(
+                timing_tag
+            )
+        ):
 
-    transition.set(
-        "advClick",
-        "0" if advance else "1"
-    )
+            slide._element.remove(
+                timing
+            )
 
-    if advance:
-
-        transition.set(
-            "advTm",
-            str(duration_ms + 1000)
-        )
-
-    else:
-
-        transition.attrib.pop(
-            "advTm",
-            None
-        )
+    return len(removed_ids)
 
 
-def add_wav(slide, wav):
-    """Embed newly generated narration."""
+# =====================================================
+# INSERT NEW AUDIO
+# =====================================================
+
+def insert_audio(slide, audio):
 
     with tempfile.NamedTemporaryFile(
         suffix=".wav",
-        delete=False,
-    ) as f:
+        delete=False
+    ) as temp:
 
-        f.write(wav)
-        path = Path(f.name)
+        temp.write(audio)
+
+        filename = Path(temp.name)
 
     try:
 
         shape = slide.shapes.add_movie(
-            str(path),
-            -914400,
-            -914400,
-            320040,
-            320040,
+            str(filename),
+            left=0,
+            top=0,
+            width=320040,
+            height=320040,
             mime_type="audio/wav",
         )
 
@@ -254,163 +281,278 @@ def add_wav(slide, wav):
 
     finally:
 
-        path.unlink(missing_ok=True)
+        filename.unlink(
+            missing_ok=True
+        )
 
 
-def attachment(data, name, mime):
+# =====================================================
+# DOWNLOAD HELPER
+# =====================================================
+
+def download(
+    data,
+    filename,
+    media_type
+):
+
     return StreamingResponse(
         io.BytesIO(data),
-        media_type=mime,
+        media_type=media_type,
         headers={
             "Content-Disposition":
-            f'attachment; filename="{name}"'
+            f'attachment; filename="{filename}"'
         },
     )
 
 
+# =====================================================
+# PROCESS POWERPOINT
+# =====================================================
+
 @app.post("/process")
 async def process(
     file: UploadFile = File(...),
-    mode: str = Form("tts"),
+    mode: str = Form("existing"),
     voice: str = Form("alloy"),
     api_key: str = Form(""),
     limit: int = Form(0),
 ):
 
-    # voice and api_key are retained for the old HTML form.
-    # Piper does not require an API key.
+    # The existing HTML interface sends voice
+    # and api_key fields.
+    #
+    # Piper ignores these values.
 
     if (
         not file.filename
-        or not file.filename.lower().endswith(".pptx")
+        or not file.filename.lower().endswith(
+            ".pptx"
+        )
     ):
+
         raise HTTPException(
             400,
-            "Upload a .pptx file"
+            "Please upload a PPTX file"
         )
 
     if limit < 0:
+
         raise HTTPException(
             400,
-            "Slide count must be 0 or greater"
+            "Invalid slide count"
         )
 
-    raw = await file.read(MAX_BYTES + 1)
+    raw = await file.read(
+        MAX_BYTES + 1
+    )
 
     if len(raw) > MAX_BYTES:
+
         raise HTTPException(
             413,
-            "PPTX exceeds 150 MB"
+            "File exceeds 150 MB"
         )
 
     try:
 
-        prs = Presentation(io.BytesIO(raw))
+        prs = Presentation(
+            io.BytesIO(raw)
+        )
 
     except Exception:
 
         raise HTTPException(
             400,
-            "Invalid PPTX"
+            "Invalid PowerPoint file"
         )
 
+    total = len(prs.slides)
+
     count = (
-        min(limit, len(prs.slides))
-        if limit
-        else len(prs.slides)
+        min(limit, total)
+        if limit > 0
+        else total
     )
 
     notes = [
-        notes_of(prs.slides[i])
+        get_notes(prs.slides[i])
         for i in range(count)
     ]
 
+    # =============================================
+    # MODE 1: EXTRACT NOTES
+    # =============================================
+
     if mode == "notes":
 
-        txt = "\n\n".join(
-            f"=== Slide {i+1} ===\n{note}"
+        text = "\n\n".join(
+            f"=== Slide {i + 1} ===\n{note}"
             for i, note in enumerate(notes)
         )
 
-        return attachment(
-            txt.encode("utf-8"),
+        return download(
+            text.encode("utf-8"),
             "slide_notes.txt",
             "text/plain; charset=utf-8",
         )
 
+    # =============================================
+    # MODE 2: KEEP EXISTING AUDIO
+    # =============================================
+
     if mode == "existing":
 
-        return attachment(
+        if 0 < limit < total:
+
+            raise HTTPException(
+                400,
+                "Existing Audio mode requires "
+                "all slides"
+            )
+
+        with zipfile.ZipFile(
+            io.BytesIO(raw)
+        ) as archive:
+
+            has_audio = any(
+                name.startswith(
+                    "ppt/media/"
+                )
+                and name.lower().endswith(
+                    AUDIO_EXTENSIONS
+                )
+                for name in archive.namelist()
+            )
+
+        if not has_audio:
+
+            raise HTTPException(
+                400,
+                "No existing audio found"
+            )
+
+        return download(
             raw,
-            "original_existing_audio.pptx",
+            "original_audio.pptx",
             PPTX_MIME,
         )
+
+    # =============================================
+    # MODE 3: FREE PIPER TTS
+    # =============================================
 
     if mode != "tts":
 
         raise HTTPException(
             400,
-            "Invalid mode"
+            "Invalid processing mode"
         )
 
     if not any(notes):
 
         raise HTTPException(
             400,
-            "No speaker notes found"
+            "No Speaker Notes found"
         )
+
+    generated = 0
 
     for i in range(count):
 
         slide = prs.slides[i]
 
-        if not notes[i]:
+        note = notes[i]
+
+        if not note:
             continue
 
         try:
 
-            wav, duration_ms = tts_wav(
-                notes[i]
+            # Generate new narration first.
+
+            audio = generate_wav(
+                note
             )
 
-            remove_old_media(slide)
+            # Remove existing media shapes.
 
-            media_id = add_wav(
+            remove_old_audio(
+                slide
+            )
+
+            # Insert new narration.
+
+            insert_audio(
                 slide,
-                wav
+                audio
             )
 
-            configure_autoplay(
-                slide,
-                media_id,
-                duration_ms,
-                advance=(
-                    i < len(prs.slides) - 1
-                ),
-            )
+            generated += 1
 
         except Exception as exc:
 
             raise HTTPException(
                 500,
-                f"Slide {i+1}: {str(exc)[:300]}"
+                f"Slide {i + 1}: "
+                f"{str(exc)[:300]}"
             )
 
-    output = io.BytesIO()
+    if generated == 0:
+
+        raise HTTPException(
+            400,
+            "No audio was generated"
+        )
+
+    # =============================================
+    # SAVE PRESENTATION
+    # =============================================
 
     try:
 
-        prs.save(output)
+        output = io.BytesIO()
+
+        prs.save(
+            output
+        )
+
+        result = output.getvalue()
+
+        # Basic ZIP integrity check.
+
+        with zipfile.ZipFile(
+            io.BytesIO(result)
+        ) as archive:
+
+            if archive.testzip() is not None:
+
+                raise RuntimeError(
+                    "PPTX ZIP integrity check failed"
+                )
+
+        # Verify python-pptx can reopen the file.
+
+        check = Presentation(
+            io.BytesIO(result)
+        )
+
+        if len(check.slides) != total:
+
+            raise RuntimeError(
+                "Slide count changed unexpectedly"
+            )
 
     except Exception as exc:
 
         raise HTTPException(
             500,
-            f"Could not save PPTX: {str(exc)[:300]}"
+            "PowerPoint validation failed: "
+            + str(exc)[:300]
         )
 
-    return attachment(
-        output.getvalue(),
-        "narrated_piper_autoplay.pptx",
+    return download(
+        result,
+        "narrated_piper_safe.pptx",
         PPTX_MIME,
     )
