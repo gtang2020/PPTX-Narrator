@@ -4,41 +4,57 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<title>PPTX Narrator V4.1</title>
+<title>PPTX Narrator V4.2</title>
 
 <style>
+* {
+    box-sizing: border-box;
+}
+
 body {
-    font-family: Arial, sans-serif;
+    font-family: Arial, Helvetica, sans-serif;
     max-width: 900px;
-    margin: 30px auto;
+    margin: 25px auto;
     padding: 20px;
     font-size: 24px;
     line-height: 1.5;
     background: #fafaff;
+    color: #222;
 }
 
 h1 {
     color: #6332ad;
-    font-size: 38px;
+    font-size: 40px;
+    line-height: 1.2;
 }
 
 h2 {
     color: #215bb5;
-    font-size: 29px;
+    font-size: 30px;
 }
 
 .box {
     background: white;
     padding: 24px;
-    margin: 20px 0;
+    margin: 22px 0;
     border-radius: 14px;
     border: 2px solid #ded7f5;
 }
 
 input {
     font-size: 22px;
-    padding: 10px;
+    padding: 12px;
     max-width: 100%;
+}
+
+input[type="number"] {
+    width: 140px;
+    border: 2px solid #bbb;
+    border-radius: 8px;
+}
+
+input[type="file"] {
+    width: 100%;
 }
 
 button {
@@ -64,6 +80,7 @@ button:disabled {
 progress {
     width: 100%;
     height: 34px;
+    accent-color: #673ab7;
 }
 
 #info {
@@ -73,6 +90,7 @@ progress {
     padding: 20px;
     border-radius: 12px;
     font-size: 23px;
+    min-height: 110px;
 }
 
 #download {
@@ -83,10 +101,17 @@ progress {
     border-radius: 10px;
     text-decoration: none;
     font-size: 23px;
+    font-weight: bold;
 }
 
 #resume {
     display: none;
+}
+
+#percent {
+    font-size: 34px;
+    font-weight: bold;
+    color: #6332ad;
 }
 
 .small {
@@ -94,26 +119,85 @@ progress {
     color: #555;
 }
 
-#percent {
-    font-size: 30px;
+.warning {
+    background: #fff4d6;
+    border-left: 6px solid #e0a000;
+    padding: 17px;
+    border-radius: 8px;
+    font-size: 20px;
+}
+
+.success {
+    color: #16803c;
     font-weight: bold;
-    color: #6332ad;
+}
+
+.status-label {
+    font-size: 20px;
+    color: #555;
+}
+
+@media (max-width: 600px) {
+    body {
+        margin: 0;
+        padding: 15px;
+        font-size: 22px;
+    }
+
+    h1 {
+        font-size: 34px;
+    }
+
+    h2 {
+        font-size: 27px;
+    }
+
+    .box {
+        padding: 18px;
+    }
+
+    button {
+        width: 100%;
+    }
+
+    #download {
+        display: none;
+        width: 100%;
+        text-align: center;
+    }
 }
 </style>
 </head>
 
 <body>
 
-<h1>🎙 PPTX Narrator V4.1</h1>
+<h1>🎙 PPTX Narrator V4.2</h1>
 
-<p><strong>Free AI Narration for PowerPoint</strong></p>
+<p>
+<strong>Free AI Narration for PowerPoint</strong>
+</p>
 
 <p>
 PPTX + DOCX / PDF / TXT
-→ Speaker Notes
-→ Piper Audio
-→ Narrated PPTX
+<br>
+↓
+<br>
+Speaker Notes
+<br>
+↓
+<br>
+Piper AI Audio
+<br>
+↓
+<br>
+Narrated PowerPoint
 </p>
+
+<div class="warning">
+<strong>Recommended:</strong>
+Test the first 3 slides before processing
+a large presentation.
+</div>
 
 <form id="form">
 
@@ -150,13 +234,19 @@ inside your PowerPoint.
 </p>
 
 <p class="small">
-External Notes should contain headings such as
-<strong>Slide 001, Slide 002, Slide 003</strong>.
+External Notes should contain headings such as:
+</p>
+
+<p>
+<strong>
+Slide 001 — Introduction<br>
+Slide 002 — Membrane Structure<br>
+Slide 003 — Transport
+</strong>
 </p>
 
 <p class="small">
-PDF requires PyMuPDF on the server.
-DOCX and TXT work without that extra dependency.
+PDF support requires PyMuPDF on the server.
 </p>
 
 </div>
@@ -165,7 +255,7 @@ DOCX and TXT work without that extra dependency.
 
 <h2>③ Narration Settings</h2>
 
-<p>Slides to process:</p>
+<p><strong>Slides to process:</strong></p>
 
 <input
     type="number"
@@ -173,14 +263,16 @@ DOCX and TXT work without that extra dependency.
     value="3"
     min="0"
     max="10000"
+    required
 >
 
 <p class="small">
-<strong>3</strong> = Test first three slides.<br>
+<strong>3</strong> = Test first three slides.
+<br>
 <strong>0</strong> = Process all slides.
 </p>
 
-<p>Save after every:</p>
+<p><strong>Save after every:</strong></p>
 
 <input
     type="number"
@@ -188,11 +280,13 @@ DOCX and TXT work without that extra dependency.
     value="1"
     min="1"
     max="20"
+    required
 >
 
 <p class="small">
-Recommended: 1 for testing;
-5 for larger presentations.
+Recommended:
+<strong>1</strong> for testing;
+<strong>5</strong> for larger presentations.
 </p>
 
 </div>
@@ -207,13 +301,21 @@ Recommended: 1 for testing;
 
 <h2>④ Processing Progress</h2>
 
-<progress id="bar" value="0" max="100"></progress>
+<progress
+    id="bar"
+    value="0"
+    max="100">
+</progress>
 
 <p id="percent">0%</p>
 
 <div id="info">
 Ready. Select your files and click Start AI Narration.
 </div>
+
+<p class="status-label" id="connection">
+Server status: Not checked
+</p>
 
 </div>
 
@@ -231,18 +333,33 @@ Ready. Select your files and click Start AI Narration.
 ▶️ Resume / Retry
 </button>
 
+<p class="small">
+A checkpoint can be downloaded while
+the remaining slides are still processing.
+</p>
+
 </div>
 
-<p class="small">
-Important: Render free hosting may restart and remove
+<div class="warning">
+<strong>Important:</strong>
+Render free hosting may restart and remove
 temporary files. Download completed checkpoints promptly.
-</p>
+</div>
 
 <script>
 "use strict";
 
+/* =========================================
+   GLOBAL STATE
+========================================= */
+
 let jobId = null;
 let timer = null;
+let polling = false;
+let networkFailures = 0;
+let lastStatus = null;
+
+const STORAGE_KEY = "pptx_v42_job";
 
 const form = document.getElementById("form");
 const info = document.getElementById("info");
@@ -251,15 +368,41 @@ const percent = document.getElementById("percent");
 const download = document.getElementById("download");
 const resume = document.getElementById("resume");
 const start = document.getElementById("start");
+const connection = document.getElementById("connection");
 
-// Do not restore an old job automatically.
-// This avoids repeated errors from stale job IDs.
-try {
-    localStorage.removeItem("pptx_v41_job");
-    localStorage.removeItem("pptx_job");
-} catch (error) {
-    // Storage may be unavailable in private browsing.
+/* =========================================
+   LOCAL STORAGE
+========================================= */
+
+function saveJobId(id) {
+    try {
+        localStorage.setItem(STORAGE_KEY, id);
+    } catch (error) {
+        // Storage may be unavailable.
+    }
 }
+
+function clearJobId() {
+    try {
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem("pptx_v41_job");
+        localStorage.removeItem("pptx_job");
+    } catch (error) {
+        // Storage may be unavailable.
+    }
+}
+
+function loadJobId() {
+    try {
+        return localStorage.getItem(STORAGE_KEY);
+    } catch (error) {
+        return null;
+    }
+}
+
+/* =========================================
+   POLLING CONTROL
+========================================= */
 
 function stopPolling() {
     if (timer !== null) {
@@ -268,13 +411,36 @@ function stopPolling() {
     }
 }
 
-function showError(prefix, error) {
-    const message = error && error.message
+function startPolling() {
+    stopPolling();
+
+    if (!jobId) {
+        return;
+    }
+
+    timer = setInterval(function() {
+        poll();
+    }, 3000);
+}
+
+/* =========================================
+   ERROR DISPLAY
+========================================= */
+
+function errorMessage(error) {
+    return error && error.message
         ? error.message
         : String(error);
-
-    info.textContent = prefix + ": " + message;
 }
+
+function showError(prefix, error) {
+    info.textContent =
+        prefix + ":\n" + errorMessage(error);
+}
+
+/* =========================================
+   READ SERVER RESPONSE
+========================================= */
 
 async function readResponse(response) {
     const raw = await response.text();
@@ -285,197 +451,477 @@ async function readResponse(response) {
         data = JSON.parse(raw);
     } catch (error) {
         throw new Error(
-            "Server returned HTTP " +
-            response.status +
-            " instead of JSON. " +
-            raw.slice(0, 250)
+            "HTTP " + response.status +
+            ": Server returned a non-JSON response."
         );
     }
 
     if (!response.ok) {
-        let detail = data.detail || data.error || "Request failed";
+        let detail =
+            data.detail ||
+            data.error ||
+            "Request failed";
 
         if (typeof detail !== "string") {
             detail = JSON.stringify(detail);
         }
 
         throw new Error(
-            "HTTP " + response.status + ": " + detail
+            "HTTP " + response.status +
+            ": " + detail
         );
     }
 
     return data;
 }
 
+/* =========================================
+   UPDATE PROGRESS
+========================================= */
+
+function updateProgress(status) {
+
+    lastStatus = status;
+
+    const target = Number(status.target) || 1;
+    const completed = Number(status.completed) || 0;
+
+    const progress = Math.max(
+        0,
+        Math.min(
+            100,
+            Math.round(100 * completed / target)
+        )
+    );
+
+    bar.value = progress;
+    percent.textContent = progress + "%";
+
+    const state = status.state || "unknown";
+
+    let message =
+        "Status: " + state +
+        "\n\nCurrent Slide: " +
+        (status.current_slide ?? 0) +
+        " / " + target +
+        "\n\nSaved Slides: " +
+        completed + " / " + target +
+        "\n\nImported Notes: " +
+        (status.imported_notes ?? 0) +
+        "\n\nSlides With Notes: " +
+        (status.notes_in_target ?? 0) +
+        "\n\nSkipped Empty Notes: " +
+        (status.skipped_empty_notes ?? 0);
+
+    if (status.last_slide_seconds != null) {
+        message +=
+            "\n\nLast Slide Audio: " +
+            status.last_slide_seconds +
+            " seconds";
+    }
+
+    if (status.last_slide_chunks != null) {
+        message +=
+            "\n\nLast Slide Audio Chunks: " +
+            status.last_slide_chunks;
+    }
+
+    if (status.error) {
+        message +=
+            "\n\nError:\n" + status.error;
+    }
+
+    if (state === "completed") {
+        message +=
+            "\n\n✅ Narration completed!";
+    }
+
+    if (state === "running") {
+        message +=
+            "\n\n🎙 Generating narration...";
+    }
+
+    info.textContent = message;
+
+    /* Download checkpoint */
+
+    if (status.download_url) {
+        download.href = status.download_url;
+        download.style.display = "inline-block";
+    } else {
+        download.style.display = "none";
+        download.removeAttribute("href");
+    }
+
+    /* Resume button */
+
+    const resumable = [
+        "failed",
+        "interrupted"
+    ].includes(state);
+
+    resume.style.display =
+        resumable ? "inline-block" : "none";
+
+    /* Finished states */
+
+    const finished = [
+        "completed",
+        "failed",
+        "interrupted"
+    ].includes(state);
+
+    if (finished) {
+        stopPolling();
+        start.disabled = false;
+    } else {
+        start.disabled = true;
+    }
+
+    connection.textContent =
+        "Server status: Connected";
+}
+
+/* =========================================
+   HANDLE LOST JOB
+========================================= */
+
+function handleLostJob() {
+
+    stopPolling();
+
+    jobId = null;
+    lastStatus = null;
+
+    clearJobId();
+
+    start.disabled = false;
+
+    resume.style.display = "none";
+
+    connection.textContent =
+        "Server status: Job no longer available";
+
+    info.textContent =
+        "⚠️ Previous job was not found.\n\n" +
+        "The server may have restarted and " +
+        "deleted its temporary files.\n\n" +
+        "Please upload your PPTX and Notes again.";
+
+}
+
+/* =========================================
+   POLL JOB STATUS
+========================================= */
+
 async function poll() {
-    if (!jobId) {
+
+    if (!jobId || polling) {
         return;
     }
 
+    polling = true;
+
+    const requestedJobId = jobId;
+
     try {
+
         const response = await fetch(
-            "/jobs/" + encodeURIComponent(jobId),
-            { cache: "no-store" }
+            "/jobs/" +
+            encodeURIComponent(requestedJobId),
+            {
+                cache: "no-store"
+            }
         );
 
         const status = await readResponse(response);
 
-        const target = Number(status.target) || 1;
-        const completed = Number(status.completed) || 0;
-
-        const progress = Math.max(
-            0,
-            Math.min(
-                100,
-                Math.round(100 * completed / target)
-            )
-        );
-
-        bar.value = progress;
-        percent.textContent = progress + "%";
-
-        info.textContent =
-            "Status: " + status.state +
-            "\n\nCurrent Slide: " +
-            status.current_slide + " / " + status.target +
-            "\n\nSaved Slides: " +
-            status.completed + " / " + status.target +
-            "\n\nImported Notes: " +
-            (status.imported_notes ?? 0) +
-            "\n\nSlides With Notes: " +
-            (status.notes_in_target ?? 0) +
-            "\n\nSkipped Empty Notes: " +
-            (status.skipped_empty_notes ?? 0) +
-            "\n\n" +
-            (status.error || "");
-
-        if (status.download_url) {
-            download.href = status.download_url;
-            download.style.display = "inline-block";
+        // Ignore stale responses from an old job.
+        if (jobId !== requestedJobId) {
+            return;
         }
 
-        const finished = [
-            "completed",
-            "failed",
-            "interrupted"
-        ].includes(status.state);
+        networkFailures = 0;
 
-        resume.style.display = [
-            "failed",
-            "interrupted"
-        ].includes(status.state)
-            ? "inline-block"
-            : "none";
-
-        if (finished) {
-            stopPolling();
-            start.disabled = false;
-        }
+        updateProgress(status);
 
     } catch (error) {
-        showError("Status connection error", error);
 
-        // A temporary network error does not necessarily
-        // mean the background job has stopped.
-        // Keep the task ID so polling can continue.
+        if (jobId !== requestedJobId) {
+            return;
+        }
+
+        const message = errorMessage(error);
+
+        /* Permanent 404: stop polling */
+
+        if (message.includes("HTTP 404")) {
+            handleLostJob();
+            return;
+        }
+
+        networkFailures += 1;
+
+        connection.textContent =
+            "Server status: Connection problem";
+
+        if (
+            message.includes("HTTP 502") ||
+            message.includes("HTTP 503") ||
+            message.includes("HTTP 504")
+        ) {
+
+            info.textContent =
+                "⚠️ Server temporarily unavailable.\n\n" +
+                "This may happen when Render " +
+                "restarts or is overloaded.\n\n" +
+                "Retry attempt: " +
+                networkFailures +
+                "\n\nThe page will try again automatically.";
+
+        } else {
+
+            showError(
+                "Status connection error",
+                error
+            );
+
+        }
+
+        // Do not discard the job ID on a
+        // temporary connection failure.
+    } finally {
+        polling = false;
     }
 }
 
-form.addEventListener("submit", async function(event) {
-    event.preventDefault();
+/* =========================================
+   START NEW JOB
+========================================= */
 
-    stopPolling();
-    jobId = null;
+form.addEventListener(
+    "submit",
+    async function(event) {
 
-    info.textContent = "Uploading files. Please wait...";
+        event.preventDefault();
 
-    bar.value = 0;
-    percent.textContent = "0%";
+        stopPolling();
 
-    download.style.display = "none";
-    download.removeAttribute("href");
+        jobId = null;
+        lastStatus = null;
+        networkFailures = 0;
 
-    resume.style.display = "none";
-    start.disabled = true;
-
-    const data = new FormData(form);
-
-    try {
-        const response = await fetch("/jobs", {
-            method: "POST",
-            body: data
-        });
-
-        const result = await readResponse(response);
-
-        if (!result.job_id) {
-            throw new Error(
-                "Server did not return a job ID."
-            );
-        }
-
-        jobId = result.job_id;
+        clearJobId();
 
         info.textContent =
-            "Upload successful.\n" +
-            "Job ID: " + jobId +
-            "\nStarting narration...";
+            "Uploading files.\n\nPlease wait...";
+
+        connection.textContent =
+            "Server status: Uploading";
+
+        bar.value = 0;
+        percent.textContent = "0%";
+
+        download.style.display = "none";
+        download.removeAttribute("href");
+
+        resume.style.display = "none";
+
+        start.disabled = true;
+
+        const data = new FormData(form);
+
+        try {
+
+            const response = await fetch(
+                "/jobs",
+                {
+                    method: "POST",
+                    body: data
+                }
+            );
+
+            const result = await readResponse(response);
+
+            if (!result.job_id) {
+                throw new Error(
+                    "Server did not return a job ID."
+                );
+            }
+
+            jobId = result.job_id;
+
+            saveJobId(jobId);
+
+            info.textContent =
+                "Upload successful.\n\n" +
+                "Job ID:\n" + jobId +
+                "\n\nStarting narration...";
+
+            await poll();
+
+            // Do not restart polling if
+            // the job has already finished.
+            if (
+                jobId &&
+                lastStatus &&
+                ![
+                    "completed",
+                    "failed",
+                    "interrupted"
+                ].includes(lastStatus.state)
+            ) {
+                startPolling();
+            }
+
+            // If initial polling failed due to
+            // a temporary connection problem,
+            // keep trying.
+            if (jobId && !lastStatus) {
+                startPolling();
+            }
+
+        } catch (error) {
+
+            showError(
+                "Upload error",
+                error
+            );
+
+            connection.textContent =
+                "Server status: Upload failed";
+
+            start.disabled = false;
+        }
+    }
+);
+
+/* =========================================
+   RESUME JOB
+========================================= */
+
+resume.addEventListener(
+    "click",
+    async function() {
+
+        if (!jobId) {
+            info.textContent =
+                "No active job to resume.";
+            return;
+        }
+
+        resume.disabled = true;
+
+        try {
+
+            const response = await fetch(
+                "/jobs/" +
+                encodeURIComponent(jobId) +
+                "/resume",
+                {
+                    method: "POST"
+                }
+            );
+
+            await readResponse(response);
+
+            resume.style.display = "none";
+
+            start.disabled = true;
+
+            stopPolling();
+
+            lastStatus = null;
+
+            await poll();
+
+            if (jobId) {
+                if (
+                    !lastStatus ||
+                    ![
+                        "completed",
+                        "failed",
+                        "interrupted"
+                    ].includes(lastStatus.state)
+                ) {
+                    startPolling();
+                }
+            }
+
+        } catch (error) {
+
+            const message = errorMessage(error);
+
+            if (message.includes("HTTP 404")) {
+                handleLostJob();
+            } else {
+                showError(
+                    "Resume error",
+                    error
+                );
+            }
+
+        } finally {
+            resume.disabled = false;
+        }
+    }
+);
+
+/* =========================================
+   INITIALIZE PAGE
+========================================= */
+
+async function initialize() {
+
+    // Remove stale job IDs from older versions.
+    try {
+        localStorage.removeItem("pptx_v41_job");
+        localStorage.removeItem("pptx_job");
+    } catch (error) {
+        // Ignore storage errors.
+    }
+
+    const savedJobId = loadJobId();
+
+    if (savedJobId) {
+
+        jobId = savedJobId;
+
+        info.textContent =
+            "Checking previous narration job...";
 
         await poll();
 
-        if (timer === null) {
-            timer = setInterval(poll, 3000);
+        if (
+            jobId &&
+            (
+                !lastStatus ||
+                ![
+                    "completed",
+                    "failed",
+                    "interrupted"
+                ].includes(lastStatus.state)
+            )
+        ) {
+            startPolling();
         }
 
-    } catch (error) {
-        showError("Upload error", error);
-        start.disabled = false;
-    }
-});
-
-resume.addEventListener("click", async function() {
-    if (!jobId) {
-        info.textContent = "No active job to resume.";
         return;
     }
 
-    try {
-        resume.disabled = true;
+    info.textContent =
+        "Ready.\n\n" +
+        "1. Upload PPTX.\n" +
+        "2. Upload DOCX, PDF, or TXT Notes.\n" +
+        "3. Set Slides to process = 3.\n" +
+        "4. Set Save after every = 1.\n" +
+        "5. Click Start AI Narration.";
 
-        const response = await fetch(
-            "/jobs/" +
-            encodeURIComponent(jobId) +
-            "/resume",
-            { method: "POST" }
-        );
+    connection.textContent =
+        "Server status: Ready";
+}
 
-        await readResponse(response);
-
-        resume.style.display = "none";
-        start.disabled = true;
-
-        stopPolling();
-        await poll();
-
-        if (timer === null) {
-            timer = setInterval(poll, 3000);
-        }
-
-    } catch (error) {
-        showError("Resume error", error);
-    } finally {
-        resume.disabled = false;
-    }
-});
-
-// Start with a clean screen.
-// No automatic request for old jobs.
-info.textContent =
-    "Ready.\n\n" +
-    "1. Upload PPTX.\n" +
-    "2. Upload DOCX or TXT notes.\n" +
-    "3. Set Slides to process = 3.\n" +
-    "4. Click Start AI Narration.";
+initialize();
 
 </script>
 
