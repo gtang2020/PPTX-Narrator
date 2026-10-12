@@ -1,5 +1,5 @@
 """
-PPTX Narrator V4.5
+PPTX Narrator V4.6
 
 Step 1:
     Insert slide-numbered DOCX/PDF/TXT narration into
@@ -89,7 +89,7 @@ if not hasattr(Part, "sha1"):
 
 
 app = FastAPI(
-    title="PPTX Narrator V4.5"
+    title="PPTX Narrator V4.6"
 )
 
 ROOT = Path(__file__).resolve().parent
@@ -301,7 +301,7 @@ def health():
 
     return {
         "status": "ok",
-        "version": "4.5",
+        "version": "4.6",
         "engine": "Piper",
         "model_exists": MODEL.is_file(),
         "piper_exists": (
@@ -322,6 +322,8 @@ def health():
         "piper_retries": PIPER_RETRIES,
         "piper_max_chars": PIPER_MAX_CHARS,
         "segment_resume": True,
+        "portable_checkpoint": True,
+        "resume_from_uploaded_pptx": True,
     }
 
 
@@ -818,7 +820,7 @@ async def insert_notes_only(
         headers={
             "Content-Disposition":
                 'attachment; filename='
-                '"PPTX_with_Speaker_Notes_V4_5.pptx"',
+                '"PPTX_with_Speaker_Notes_V4_6.pptx"',
             "X-Notes-Imported": str(count),
             "X-Total-Slides": str(total),
         },
@@ -1658,6 +1660,178 @@ def configure_autoplay(
         )
 
 
+
+# ============================================================
+# V4.6 PORTABLE CHECKPOINT SUPPORT
+# ============================================================
+
+import hashlib
+import zipfile
+import shutil
+
+PORTABLE_PROGRESS = "pptx_narrator_v46_progress.json"
+
+
+def notes_digest(notes):
+    return hashlib.sha256(
+        notes.encode("utf-8")
+    ).hexdigest()
+
+
+def portable_metadata(prs, completed, skipped):
+    completed = int(completed)
+
+    return {
+        "format": "PPTX_NARRATOR_PORTABLE_CHECKPOINT",
+        "version": "4.6",
+        "completed": completed,
+        "total": len(prs.slides),
+        "skipped_empty_notes": int(skipped),
+        "notes_sha256": [
+            notes_digest(get_notes(prs.slides[i]))
+            for i in range(completed)
+        ],
+        "saved_at": int(time.time()),
+    }
+
+
+def attach_portable_metadata(path, metadata):
+    """
+    Embed progress information directly inside PPTX.
+    """
+
+    temporary = path.with_name(
+        path.name + ".portable.tmp"
+    )
+
+    try:
+        with zipfile.ZipFile(path, "r") as original:
+            with zipfile.ZipFile(
+                temporary, "w"
+            ) as updated:
+
+                for member in original.infolist():
+                    if member.filename == PORTABLE_PROGRESS:
+                        continue
+
+                    updated.writestr(
+                        member,
+                        original.read(member.filename),
+                    )
+
+                updated.writestr(
+                    PORTABLE_PROGRESS,
+                    json.dumps(
+                        metadata,
+                        ensure_ascii=False,
+                    ),
+                )
+
+        os.replace(temporary, path)
+
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def read_portable_metadata(path, prs):
+    """
+    Validate recovery progress and embedded audio.
+    """
+
+    try:
+        with zipfile.ZipFile(path, "r") as archive:
+            if PORTABLE_PROGRESS not in archive.namelist():
+                return None
+
+            info = archive.getinfo(PORTABLE_PROGRESS)
+
+            if info.file_size > 1024 * 1024:
+                raise ValueError(
+                    "Checkpoint metadata too large"
+                )
+
+            raw = archive.read(PORTABLE_PROGRESS)
+            meta = json.loads(raw)
+
+    except (
+        zipfile.BadZipFile,
+        json.JSONDecodeError,
+        KeyError,
+    ) as exc:
+        raise ValueError(
+            "Invalid checkpoint metadata"
+        ) from exc
+
+    if not isinstance(meta, dict):
+        raise ValueError(
+            "Checkpoint metadata must be an object"
+        )
+
+    if meta.get("format") != (
+        "PPTX_NARRATOR_PORTABLE_CHECKPOINT"
+    ):
+        raise ValueError(
+            "Unrecognized checkpoint format"
+        )
+
+    if meta.get("version") != "4.6":
+        raise ValueError(
+            "Unsupported checkpoint version"
+        )
+
+    total = len(prs.slides)
+    completed = meta.get("completed")
+    skipped = meta.get("skipped_empty_notes")
+    hashes = meta.get("notes_sha256")
+
+    if (
+        type(completed) is not int
+        or not 0 <= completed <= total
+        or type(skipped) is not int
+        or not 0 <= skipped <= completed
+        or type(meta.get("total")) is not int
+        or meta["total"] != total
+        or not isinstance(hashes, list)
+        or len(hashes) != completed
+    ):
+        raise ValueError(
+            "Invalid checkpoint progress"
+        )
+
+    actual_skipped = 0
+
+    for i in range(completed):
+        slide = prs.slides[i]
+        notes = get_notes(slide)
+
+        if hashes[i] != notes_digest(notes):
+            raise ValueError(
+                f"Checkpoint notes changed "
+                f"on slide {i + 1}"
+            )
+
+        if notes:
+            has_audio = any(
+                shape.shape_type == MSO_SHAPE_TYPE.MEDIA
+                for shape in slide.shapes
+            )
+
+            if not has_audio:
+                raise ValueError(
+                    f"Checkpoint audio missing "
+                    f"on slide {i + 1}"
+                )
+        else:
+            actual_skipped += 1
+
+    if actual_skipped != skipped:
+        raise ValueError(
+            "Skipped-slide count does not match"
+        )
+
+    return meta
+
+
 # ============================================================
 # CHECKPOINT VALIDATION
 # ============================================================
@@ -1720,6 +1894,20 @@ def save_checkpoint(
         total,
     )
 
+    attach_portable_metadata(
+        temporary,
+        portable_metadata(
+            prs,
+            completed,
+            skipped,
+        ),
+    )
+
+    validate_pptx(
+        temporary,
+        total,
+    )
+
     os.replace(
         temporary,
         checkpoint_path(job_dir),
@@ -1748,10 +1936,35 @@ def restore_checkpoint_status(
         job_dir
     )
 
-    if (
-        not checkpoint.is_file()
-        or not metadata.is_file()
-    ):
+    if not checkpoint.is_file():
+        return status
+
+    if not metadata.is_file():
+        try:
+            prs = Presentation(str(checkpoint))
+
+            portable = read_portable_metadata(
+                checkpoint,
+                prs,
+            )
+
+            if (
+                portable
+                and portable["total"] == status["total"]
+            ):
+                status["completed"] = (
+                    portable["completed"]
+                )
+
+                status["skipped_empty_notes"] = (
+                    portable["skipped_empty_notes"]
+                )
+
+                status["checkpoint_available"] = True
+
+        except Exception:
+            pass
+
         return status
 
     try:
@@ -1926,7 +2139,10 @@ def process_job(job_id):
                 status["skipped_empty_notes"] += 1
 
             if (
-                (i + 1) % batch_size == 0
+                (
+                    i + 1
+                    - int(status.get("resumed_from", 0))
+                ) % batch_size == 0
                 or i + 1 == target
             ):
                 save_checkpoint(
@@ -2119,6 +2335,48 @@ async def create_job(
             else total
         )
 
+        try:
+            portable = read_portable_metadata(
+                source,
+                prs,
+            )
+
+        except ValueError as exc:
+            raise HTTPException(
+                400,
+                f"Invalid recovery checkpoint: {exc}",
+            ) from exc
+
+        recovered = (
+            portable["completed"]
+            if portable
+            else 0
+        )
+
+        recovered_skipped = (
+            portable["skipped_empty_notes"]
+            if portable
+            else 0
+        )
+
+        if recovered > target:
+            raise HTTPException(
+                400,
+                "Slides to Process must be 0 "
+                "or at least the saved slide count",
+            )
+
+        if (
+            portable
+            and notes_file is not None
+            and notes_file.filename
+        ):
+            raise HTTPException(
+                400,
+                "Do not upload a new script "
+                "when resuming a checkpoint",
+            )
+
         imported_count = 0
 
         if (
@@ -2174,13 +2432,15 @@ async def create_job(
             "state": "queued",
             "total": total,
             "target": target,
-            "completed": 0,
-            "current_slide": 0,
+            "completed": recovered,
+            "current_slide": recovered,
+            "resumed_from": recovered,
+            "portable_checkpoint": bool(portable),
             "batch_size": batch_size,
             "imported_notes": imported_count,
             "notes_in_target": notes_found,
-            "skipped_empty_notes": 0,
-            "checkpoint_available": False,
+            "skipped_empty_notes": recovered_skipped,
+            "checkpoint_available": bool(portable),
             "error": None,
             "created_at": int(time.time()),
             "audio_slide": 0,
@@ -2189,6 +2449,22 @@ async def create_job(
             "audio_chunk": 0,
             "audio_chunk_total": 0,
         }
+
+        if portable:
+            shutil.copy2(
+                source,
+                checkpoint_path(job_dir),
+            )
+
+            save_json(
+                checkpoint_meta_path(job_dir),
+                {
+                    "completed": recovered,
+                    "skipped_empty_notes": recovered_skipped,
+                    "total": total,
+                    "saved_at": int(time.time()),
+                },
+            )
 
         update_status(
             job_dir,
@@ -2327,7 +2603,7 @@ def download_job(job_id: str):
         str(path),
         media_type=PPTX_MIME,
         filename=(
-            f"narrated_v4_5_"
+            f"narrated_v4_6_"
             f"{status['completed']}_of_"
             f"{status['total']}.pptx"
         ),
@@ -2422,7 +2698,7 @@ def download_audio(job_id: str):
         str(archive_path),
         media_type="application/zip",
         filename=(
-            f"narration_audio_v4_5_"
+            f"narration_audio_v4_6_"
             f"{status['completed']}_slides.zip"
         ),
     )
@@ -2583,6 +2859,7 @@ async def legacy_process(
         headers={
             "Content-Disposition":
                 'attachment; filename='
-                '"narrated_piper_v4_5.pptx"'
+                '"narrated_piper_v4_6.pptx"'
         },
     )
+

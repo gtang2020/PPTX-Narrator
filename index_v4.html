@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<title>PPTX Narrator V4.5 — Notes & Audio</title>
+<title>PPTX Narrator V4.6 — Notes & Audio</title>
 
 <style>
 * {
@@ -245,7 +245,7 @@ progress {
 
 <body>
 
-<h1>🎙 PPTX Narrator V4.5</h1>
+<h1>🎙 PPTX Narrator V4.6</h1>
 
 <p>
 <strong>Free Piper AI Narration for PowerPoint</strong>
@@ -258,11 +258,12 @@ Step 2: Speaker Notes → WAV Audio → Narrated PPTX
 <div class="warning">
 <strong>Recommended: Start with three slides.</strong>
 <br><br>
-V4.5 includes longer Piper synthesis timeouts and
+V4.6 includes portable recovery checkpoints, longer Piper synthesis timeouts and
 automatic retries to improve reliability.
 <br><br>
 Render free storage is temporary.
-Download completed checkpoints and audio ZIP files promptly.
+<strong>Download your recovery PPTX to your iPad after each checkpoint.</strong>
+Server-side checkpoints can disappear after restarts.
 <br><br>
 Audio files are <strong>WAV, not MP3</strong>.
 </div>
@@ -439,6 +440,8 @@ again before narration.
 >
 
 <p class="small">
+<strong>Recovery PPTX: choose 0 to finish remaining slides.</strong>
+<br>
 <strong>3</strong> = first three slides.
 <br>
 <strong>10</strong> = first ten slides.
@@ -550,8 +553,13 @@ Server status: Checking…
 </button>
 
 <p class="small">
-The PPTX download becomes available after a checkpoint
-has been saved.
+Download the latest narrated PPTX to your iPad
+after each checkpoint.
+
+<br><br>
+
+After a Render restart, upload that saved PPTX
+in Step 2 and set Slides to Process = 0.
 </p>
 
 <p class="small">
@@ -574,7 +582,7 @@ Keep copies of your original PPTX and narration script.
 <h2>🖥 Piper Server Information</h2>
 
 <div id="serverDetails">
-Checking V4.5 server configuration…
+Checking V4.6 server configuration…
 </div>
 
 <button
@@ -622,8 +630,8 @@ const checkServer = $("checkServer");
    GLOBAL STATE
 ========================================= */
 
-const STORAGE_KEY = "pptx_v45_job";
-const OLD_STORAGE_KEY = "pptx_v44_job";
+const STORAGE_KEY = "pptx_v46_job";
+const OLD_STORAGE_KEY = "pptx_v45_job";
 
 let jobId = null;
 let timer = null;
@@ -804,7 +812,7 @@ notesForm.addEventListener(
             const blob = await response.blob();
 
             const filename =
-                "PPTX_with_Speaker_Notes_V4_5.pptx";
+                "PPTX_with_Speaker_Notes_V4_6.pptx";
 
             const url = URL.createObjectURL(blob);
 
@@ -882,6 +890,7 @@ function renderStatus(status) {
         `Status: ${state}\n\n` +
         `Current slide: ${status.current_slide ?? 0} / ${target}\n` +
         `Saved slides: ${completed} / ${target}\n` +
+        `Recovered from upload: ${status.resumed_from ?? 0} slides\n` +
         `Imported notes: ${status.imported_notes ?? 0}\n` +
         `Slides with notes: ${status.notes_in_target ?? 0}\n` +
         `Skipped empty notes: ${status.skipped_empty_notes ?? 0}`;
@@ -1293,9 +1302,9 @@ async function checkHealth() {
                 `\nActive narration jobs: ${health.active_jobs}`;
         }
 
-        if (version !== "4.5") {
+        if (version !== "4.6") {
             details +=
-                "\n\n⚠️ Expected backend V4.5.";
+                "\n\n⚠️ Expected backend V4.6.";
         }
 
         if (!piperReady || !modelReady) {
