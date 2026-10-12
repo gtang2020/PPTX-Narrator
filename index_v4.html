@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<title>PPTX Narrator V4.2</title>
+<title>PPTX Narrator V4.3</title>
 
 <style>
 * {
@@ -171,7 +171,7 @@ progress {
 
 <body>
 
-<h1>🎙 PPTX Narrator V4.2</h1>
+<h1>🎙 PPTX Narrator V4.3</h1>
 
 <p>
 <strong>Free AI Narration for PowerPoint</strong>
@@ -199,6 +199,27 @@ Test the first 3 slides before processing
 a large presentation.
 </div>
 
+<div class="box" style="border:3px solid #218447;background:#f5fff8">
+<h2>📝 Step 1 — Insert Speaker Notes (No Audio)</h2>
+<p>First split your slide-numbered script and insert it into the matching slides. Download and inspect the PPTX before generating narration.</p>
+<form id="notesForm">
+<p><strong>PowerPoint (.pptx)</strong></p>
+<input type="file" name="file" accept=".pptx" required>
+<p><strong>Script (.docx, .pdf, .txt)</strong></p>
+<input type="file" name="notes_file" accept=".docx,.pdf,.txt" required>
+<p><strong>Existing notes:</strong></p>
+<select name="existing_notes" style="font-size:23px;padding:10px;width:100%">
+<option value="replace">Replace notes on matched slides</option>
+<option value="append">Append to existing notes</option>
+<option value="keep">Keep existing nonempty notes</option>
+</select>
+<p><label><input type="checkbox" name="require_all" checked style="width:25px;height:25px"> Require narration for every slide (recommended)</label></p>
+<button id="notesButton" type="submit">📝 Insert Notes &amp; Download PPTX</button>
+</form>
+<div id="notesInfo" role="status" style="white-space:pre-wrap;font-size:22px"></div>
+</div>
+
+<h2>🎤 Step 2 — Generate Narrated PowerPoint</h2>
 <form id="form">
 
 <div class="box">
@@ -345,6 +366,38 @@ the remaining slides are still processing.
 Render free hosting may restart and remove
 temporary files. Download completed checkpoints promptly.
 </div>
+
+<script>
+// Standalone notes-only workflow: does not start a Piper job.
+document.getElementById("notesForm").addEventListener("submit", async function(event) {
+  event.preventDefault();
+  const button = document.getElementById("notesButton");
+  const status = document.getElementById("notesInfo");
+  button.disabled = true;
+  status.textContent = "Inserting Speaker Notes…";
+  try {
+    const data = new FormData(this);
+    data.set("require_all", data.has("require_all") ? "true" : "false");
+    const response = await fetch("/notes/insert", {method:"POST", body:data});
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `Server error ${response.status}`);
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "PPTX_with_Speaker_Notes_V4_3.pptx";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    status.textContent = `✓ Download started. Inserted ${response.headers.get("X-Notes-Imported")} of ${response.headers.get("X-Total-Slides")} slides. Please inspect the notes before Step 2.`;
+  } catch(error) {
+    status.textContent = "⚠ " + error.message;
+  } finally { button.disabled = false; }
+});
+</script>
 
 <script>
 "use strict";

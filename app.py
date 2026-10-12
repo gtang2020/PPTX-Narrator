@@ -1,5 +1,5 @@
 """
-PPTX Narrator V4.2
+PPTX Narrator V4.3
 
 Free Piper TTS
 PPTX + DOCX / PDF / TXT Speaker Notes
@@ -77,7 +77,7 @@ if not hasattr(Part, "sha1"):
 # SETTINGS
 # =====================================================
 
-app = FastAPI(title="PPTX Narrator V4.2")
+app = FastAPI(title="PPTX Narrator V4.3")
 
 ROOT = Path(__file__).resolve().parent
 
@@ -150,7 +150,7 @@ def health():
 
     return {
         "status": "ok",
-        "version": "4.2",
+        "version": "4.3",
         "engine": "Piper",
         "model_exists": MODEL.is_file(),
         "external_notes": True,
@@ -462,6 +462,82 @@ def import_external_notes(
         )
 
     return len(mapping)
+
+
+# =====================================================
+# V4.3 STEP 1: NOTES-ONLY DOWNLOAD (NO PIPER)
+# =====================================================
+
+@app.post("/notes/insert")
+async def insert_notes_only(
+    file: UploadFile = File(...),
+    notes_file: UploadFile = File(...),
+    existing_notes: str = Form("replace"),
+    require_all: bool = Form(True),
+):
+    """Return a PPTX with slide-numbered speaker notes, without TTS."""
+    if existing_notes not in ("replace", "append", "keep"):
+        raise HTTPException(400, "Invalid existing_notes mode")
+    if not file.filename or Path(file.filename).suffix.lower() != ".pptx":
+        raise HTTPException(400, "Please upload a PPTX")
+    if not notes_file.filename or Path(notes_file.filename).suffix.lower() not in (".docx", ".pdf", ".txt"):
+        raise HTTPException(400, "Please upload a DOCX, PDF, or TXT script")
+
+    # Spool large uploads to disk rather than holding entire files in RAM.
+    with tempfile.TemporaryDirectory(prefix="pptx_notes_") as tmp:
+        source = Path(tmp) / "source.pptx"
+        size = 0
+        with source.open("wb") as out:
+            while chunk := await file.read(1024 * 1024):
+                size += len(chunk)
+                if size > MAX_BYTES:
+                    raise HTTPException(413, "PPTX exceeds 150 MB")
+                out.write(chunk)
+        notes_data = await notes_file.read(MAX_NOTES_BYTES + 1)
+        if len(notes_data) > MAX_NOTES_BYTES:
+            raise HTTPException(413, "Notes exceed 25 MB")
+        try:
+            prs = Presentation(str(source))
+            ext = Path(notes_file.filename).suffix.lower()
+            script = {".txt": read_txt, ".docx": read_docx, ".pdf": read_pdf}[ext](notes_data)
+            mapping = parse_slide_notes(script)
+            total = len(prs.slides)
+            outside = sorted(n for n in mapping if n < 1 or n > total)
+            if outside:
+                raise ValueError(f"Slide numbers outside PPTX (1-{total}): {outside[:12]}")
+            missing = sorted(set(range(1, total + 1)) - set(mapping))
+            if require_all and missing:
+                raise ValueError(f"Missing narration for {len(missing)} slides: {missing[:20]}. Uncheck 'Require every slide' to allow partial scripts.")
+            for n, narration in mapping.items():
+                slide = prs.slides[n - 1]
+                old = get_notes(slide)
+                if existing_notes == "keep" and old:
+                    continue
+                if existing_notes == "append" and old:
+                    narration = old + "\n\n" + narration
+                set_notes(slide, narration)
+            output = io.BytesIO()
+            prs.save(output)
+            output.seek(0)
+            # Reopen and verify all inserted notes before returning.
+            check = Presentation(output)
+            for n, narration in mapping.items():
+                if not get_notes(check.slides[n - 1]):
+                    raise RuntimeError(f"Speaker Notes verification failed on slide {n}")
+            output.seek(0)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(400, f"Notes insertion failed: {str(exc)[:450]}") from exc
+
+    from fastapi.responses import Response
+    return Response(
+        content=output.getvalue(),
+        media_type=PPTX_MIME,
+        headers={"Content-Disposition": 'attachment; filename="PPTX_with_Speaker_Notes_V4_3.pptx"',
+                 "X-Notes-Imported": str(len(mapping)),
+                 "X-Total-Slides": str(total)},
+    )
 
 
 # =====================================================
