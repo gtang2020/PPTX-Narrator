@@ -1,1 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 
+<title>PPTX Narrator V4</title>
+
+<style>
+body {
+    font-family: Arial, sans-serif;
+    max-width: 850px;
+    margin: 32px auto;
+    padding: 0 20px;
+    font-size: 22px;
+    line-height: 1.5;
+}
+
+h1 {
+    color: #6135ae;
+}
+
+button, input {
+    font-size: 21px;
+    padding: 10px;
+    margin: 8px 0;
+}
+
+button {
+    background: #6135ae;
+    color: white;
+    border: 0;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+progress {
+    width: 100%;
+    height: 30px;
+}
+
+a {
+    font-weight: bold;
+}
+
+#info {
+    white-space: pre-wrap;
+    background: #f3efff;
+    padding: 18px;
+    border-radius: 10px;
+}
+</style>
+</head>
+
+<body>
+
+<h1>🎙 PPTX Narrator V4</h1>
+
+<p>
+上传包含 Speaker Notes 的 PPTX。
+免费 Piper 配音，分批保存，自动播放，
+配音结束 2 秒后翻页。
+</p>
+
+<form id="form">
+
+<label>
+PPTX 文件：
+<input type="file" name="file" accept=".pptx" required>
+</label>
+
+<br>
+
+<label>
+测试前 N 张（0 = 全部）：
+<input type="number" name="limit" value="3" min="0" max="10000">
+</label>
+
+<br>
+
+<label>
+每批保存张数：
+<input type="number" name="batch_size" value="5" min="1" max="20">
+</label>
+
+<br>
+
+<button type="submit">
+开始后台配音
+</button>
+
+</form>
+
+<p>
+<progress id="bar" value="0" max="100"></progress>
+</p>
+
+<div id="info">
+等待上传。
+</div>
+
+<p>
+<a id="download" style="display:none" href="#">
+📥 下载已完成批次 / 完整 PPTX
+</a>
+</p>
+
+<button id="resume" style="display:none">
+继续 / 重试
+</button>
+
+<p style="font-size:17px">
+注意：Render 免费服务器重启可能清除工作文件。
+请及时下载检查点。
+</p>
+
+<script>
+
+let jobId = null;
+let timer = null;
+
+const info = document.getElementById("info");
+const bar = document.getElementById("bar");
+const dl = document.getElementById("download");
+const resume = document.getElementById("resume");
+
+async function poll() {
+
+    if (!jobId) return;
+
+    try {
+
+        const response = await fetch("/jobs/" + jobId);
+        const status = await response.json();
+
+        if (!response.ok) {
+            throw Error(status.detail || "状态查询失败");
+        }
+
+        bar.value = Math.round(
+            100 * status.completed / status.target
+        );
+
+        info.textContent =
+            "任务：" + status.state +
+            "\n正在处理：" +
+            status.current_slide + " / " + status.target +
+            "\n已保存检查点：" +
+            status.completed + " / " + status.target +
+            "\n跳过空 Notes：" +
+            status.skipped_empty_notes +
+            "\n" + (status.error || "");
+
+        if (status.download_url) {
+            dl.href = status.download_url;
+            dl.style.display = "inline";
+        }
+
+        resume.style.display =
+            ["failed", "interrupted"].includes(status.state)
+            ? "inline"
+            : "none";
+
+        if (
+            status.state === "completed" ||
+            status.state === "failed" ||
+            status.state === "interrupted"
+        ) {
+            clearInterval(timer);
+            timer = null;
+        }
+
+    } catch (error) {
+
+        info.textContent =
+            "连接中断：" + error.message;
+
+        clearInterval(timer);
+        timer = null;
+    }
+}
+
+document.getElementById("form").onsubmit =
+async function(event) {
+
+    event.preventDefault();
+
+    info.textContent = "正在上传…";
+
+    dl.style.display = "none";
+    resume.style.display = "none";
+
+    const data = new FormData(event.target);
+
+    try {
+
+        const response = await fetch("/jobs", {
+            method: "POST",
+            body: data
+        });
+
+        const status = await response.json();
+
+        if (!response.ok) {
+            throw Error(status.detail || "上传失败");
+        }
+
+        jobId = status.job_id;
+
+        localStorage.setItem("pptx_job", jobId);
+
+        if (timer) clearInterval(timer);
+
+        await poll();
+
+        timer = setInterval(poll, 3000);
+
+    } catch (error) {
+
+        info.textContent =
+            "错误：" + error.message;
+    }
+};
+
+resume.onclick = async function() {
+
+    if (!jobId) return;
+
+    const response = await fetch(
+        "/jobs/" + jobId + "/resume",
+        { method: "POST" }
+    );
+
+    if (!response.ok) {
+        info.textContent =
+            "继续失败：" + await response.text();
+        return;
+    }
+
+    if (timer) clearInterval(timer);
+
+    await poll();
+
+    timer = setInterval(poll, 3000);
+};
+
+jobId = localStorage.getItem("pptx_job");
+
+if (jobId) {
+    poll().then(function() {
+        if (timer === null) {
+            timer = setInterval(poll, 3000);
+        }
+    });
+}
+
+</script>
+
+</body>
+</html>
